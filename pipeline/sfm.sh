@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Recover camera poses with COLMAP (CPU) and undistort to PINHOLE cameras.
-# Usage: pipeline/sfm.sh <workdir>   (expects <workdir>/images)
+# Usage: pipeline/sfm.sh <workdir>   (expects <workdir>/images, optional <workdir>/masks)
 set -euo pipefail
 WORK=$1
 DB="$WORK/colmap.db"
 rm -rf "$DB" "$WORK/sparse" "$WORK/undistorted"
 mkdir -p "$WORK/sparse"
 
-colmap feature_extractor --database_path "$DB" --image_path "$WORK/images" \
+MASK_ARGS=()
+[ -d "$WORK/masks" ] && MASK_ARGS=(--ImageReader.mask_path "$WORK/masks")
+
+colmap feature_extractor --database_path "$DB" --image_path "$WORK/images" "${MASK_ARGS[@]}" \
   --ImageReader.single_camera 1 --ImageReader.camera_model SIMPLE_RADIAL \
   --SiftExtraction.use_gpu 0 --SiftExtraction.max_num_features 8192
 

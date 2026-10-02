@@ -30,7 +30,7 @@ URL options: `?wind=<mph>&windDir=<deg>`, `?flyover=0`, `?splat=<url>` or `?spla
 
 **The splat file is not in this repository.** It is derived from third-party footage, and
 publishing it would need the rights holder's permission. Run the pipeline below to make your
-own copy at `data/romanby-h2/splat/splat.ply`, which the dev server loads automatically.
+own copy at `data/romanby-h2-full/splat/splat.ply`, which the dev server loads automatically.
 You can also press **L** to load any splat. Without one, the hole plays on the stylized
 terrain, which is built from the same reconstruction.
 
@@ -61,16 +61,18 @@ flyover video ──ffmpeg──> frames ──COLMAP──> camera poses + spar
 ```bash
 apt-get install colmap ffmpeg
 pip install torch numpy pillow plyfile scipy
-# Trim the logo/yardage overlays (0–9.5 s) and the end card (60.5 s on).
-pipeline/extract_frames.sh <flyover.mp4> data/romanby-h2 9.6 60.3 5
-pipeline/sfm.sh data/romanby-h2
+W=data/romanby-h2-full
+# Stop before the end card (60.5 s); mask the logo and yardage banner shown until 9.7 s.
+pipeline/extract_frames.sh <flyover.mp4> $W 0 60.3 5
+python pipeline/make_masks.py $W 0 5 9.7 225,0,190,110 0,262,432,90
+pipeline/sfm.sh $W
 cd pipeline/splat
-python train.py ../../data/romanby-h2/undistorted ../../data/romanby-h2/splat --iters 7000
-python align.py ../../data/romanby-h2/undistorted ../../data/romanby-h2/align.json \
-  --hole-length-yd 382 --clip-start 9.6 --clip-end 60.3
-python bake_hole.py ../../data/romanby-h2/splat/ckpt.pt ../../data/romanby-h2/align.json \
+python train.py ../../$W/undistorted ../../$W/splat --iters 7000
+python align.py ../../$W/undistorted ../../$W/align.json \
+  --hole-length-yd 382 --clip-start 0 --clip-end 60.3
+python bake_hole.py ../../$W/splat/ckpt.pt ../../$W/align.json \
   ../courses/romanby-h2.layout.json ../../public/courses/romanby-h2.json
-python render_view.py ../../data/romanby-h2/splat/ckpt.pt ../../data/romanby-h2/align.json \
+python render_view.py ../../$W/splat/ckpt.pt ../../$W/align.json \
   out.png --eye 10 3 -150 --target 20 0 -250      # spot-check a view
 ```
 

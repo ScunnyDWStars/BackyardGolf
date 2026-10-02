@@ -45,6 +45,7 @@ class View:
     width: int
     height: int
     image: torch.Tensor  # [H,W,3] float in [0,1]
+    mask: torch.Tensor | None = None  # [H,W,1], 1 = supervise, 0 = burned-in overlay
 
     @property
     def center(self) -> torch.Tensor:
@@ -93,6 +94,14 @@ def load_colmap(root: str | os.PathLike) -> tuple[list[View], np.ndarray, np.nda
         cid, name = int(parts[8]), parts[9]
         w, h, fx, fy, cx, cy = cams[cid]
         img = np.asarray(Image.open(root / "images" / name).convert("RGB"), dtype=np.float32) / 255.0
+        mask = None
+        for mdir in (root / "masks", root.parent / "masks"):
+            if (mdir / f"{name}.png").exists():
+                # Masks are drawn on the distorted frames; distortion is tiny, so a resize
+                # to the undistorted size is enough given the generous rectangles.
+                m = Image.open(mdir / f"{name}.png").convert("L").resize((w, h), Image.NEAREST)
+                mask = torch.from_numpy(np.asarray(m, dtype=np.float32) / 255.0)[..., None]
+                break
         views.append(
             View(
                 name=name,
@@ -100,6 +109,7 @@ def load_colmap(root: str | os.PathLike) -> tuple[list[View], np.ndarray, np.nda
                 t=torch.tensor(t, dtype=torch.float32),
                 fx=fx, fy=fy, cx=cx, cy=cy, width=w, height=h,
                 image=torch.from_numpy(img),
+                mask=mask,
             )
         )
     views.sort(key=lambda v: v.name)
@@ -121,8 +131,12 @@ def downscale(view: View, factor: int) -> View:
     h, w = view.height // factor, view.width // factor
     img = F.interpolate(img, size=(h, w), mode="area")[0].permute(1, 2, 0).contiguous()
     sx, sy = w / view.width, h / view.height
+    mask = None
+    if view.mask is not None:
+        mask = F.interpolate(view.mask.permute(2, 0, 1)[None], size=(h, w), mode="nearest")[0]
+        mask = mask.permute(1, 2, 0).contiguous()
     return View(view.name, view.R, view.t, view.fx * sx, view.fy * sy, view.cx * sx,
-                view.cy * sy, w, h, img)
+                view.cy * sy, w, h, img, mask)
 
 
 # ---------------------------------------------------------------- Gaussians
@@ -247,8 +261,8 @@ def _gauss_window(size=11, sigma=1.5):
 _WIN = _gauss_window()
 
 
-def ssim(img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
-    """img [H,W,3] in [0,1]."""
+def ssim(img1: torch.Tensor, img2: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
+    """img [H,W,3] in [0,1]; optional mask [H,W,1] restricts the mean."""
     a = img1.permute(2, 0, 1)[None]
     b = img2.permute(2, 0, 1)[None]
     mu1 = F.conv2d(a, _WIN, padding=5, groups=3)
@@ -258,9 +272,13 @@ def ssim(img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
     s12 = F.conv2d(a * b, _WIN, padding=5, groups=3) - mu1 * mu2
     c1, c2 = 0.01**2, 0.03**2
     m = ((2 * mu1 * mu2 + c1) * (2 * s12 + c2)) / ((mu1**2 + mu2**2 + c1) * (s11 + s22 + c2))
-    return m.mean()
+    if mask is None:
+        return m.mean()
+    w = mask.permute(2, 0, 1)[None]
+    return (m * w).sum() / (w.sum() * 3).clamp_min(1)
 
 
-def psnr(img1: torch.Tensor, img2: torch.Tensor) -> float:
-    mse = F.mse_loss(img1.clamp(0, 1), img2).item()
+def psnr(img1: torch.Tensor, img2: torch.Tensor, mask: torch.Tensor | None = None) -> float:
+    err = (img1.clamp(0, 1) - img2) ** 2
+    mse = (err.mean() if mask is None else (err * mask).sum() / (mask.sum() * 3).clamp_min(1)).item()
     return 10 * math.log10(1.0 / max(mse, 1e-10))

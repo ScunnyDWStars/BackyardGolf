@@ -15,7 +15,7 @@ type ViewMode = "stylized" | "splat";
 const params = new URLSearchParams(location.search);
 const courseUrl = params.get("course") ?? "courses/romanby-h2.json";
 // The trained splat is not shipped in the repo; in dev it is served from the local data/ dir.
-const defaultSplatUrl = "/data/romanby-h2/splat/splat.ply";
+const defaultSplatUrl = "/data/romanby-h2-full/splat/splat.ply";
 
 const toV = (p: { x: number; y: number; z: number }) => new THREE.Vector3(p.x, p.y, p.z);
 
@@ -164,9 +164,10 @@ async function main() {
   window.addEventListener("keyup", (e) => keys.delete(e.key));
 
   // --- loop --------------------------------------------------------------------------
-  const clock = new THREE.Clock();
-  renderer.setAnimationLoop(() => {
-    const dt = Math.min(clock.getDelta(), 0.1);
+  const timer = new THREE.Timer();
+  renderer.setAnimationLoop((time) => {
+    timer.update(time);
+    const dt = Math.min(timer.getDelta(), 0.1);
 
     if (session.phase === "address" && director.mode !== "flyover") {
       const turn = (keys.has("Shift") ? 1.2 : 0.35) * dt;

@@ -12,8 +12,8 @@ interface Alignment {
 }
 
 const params = new URLSearchParams(location.search);
-const splatUrl = params.get("splat") ?? "/data/romanby-h2/splat/splat.ply";
-const alignUrl = params.get("align") ?? "/data/romanby-h2/align.json";
+const splatUrl = params.get("splat") ?? "/data/romanby-h2-full/splat/splat.ply";
+const alignUrl = params.get("align") ?? "/data/romanby-h2-full/align.json";
 const status = document.getElementById("status")!;
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });

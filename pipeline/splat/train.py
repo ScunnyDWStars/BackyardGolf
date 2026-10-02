@@ -181,7 +181,7 @@ class Trainer:
 
 def evaluate(trainer: Trainer, views) -> float:
     with torch.no_grad():
-        scores = [gs.psnr(gs.render(trainer.params, v, trainer.background)["image"], v.image)
+        scores = [gs.psnr(gs.render(trainer.params, v, trainer.background)["image"], v.image, v.mask)
                   for v in views]
     return float(np.mean(scores))
 
@@ -224,8 +224,11 @@ def main():
 
         out_r = gs.render(trainer.params, view, trainer.background)
         img = out_r["image"]
-        l1 = (img - view.image).abs().mean()
-        loss = 0.8 * l1 + 0.2 * (1 - gs.ssim(img, view.image))
+        if view.mask is None:
+            l1 = (img - view.image).abs().mean()
+        else:
+            l1 = ((img - view.image).abs() * view.mask).sum() / (view.mask.sum() * 3)
+        loss = 0.8 * l1 + 0.2 * (1 - gs.ssim(img, view.image, view.mask))
         trainer.opt.zero_grad(set_to_none=True)
         loss.backward()
         trainer.opt.step()

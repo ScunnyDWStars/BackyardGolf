@@ -24,8 +24,9 @@ npm run dev          # http://localhost:5173
 | L | Load a splat file (.ply / .spz) from disk |
 | Space | Skip flyover / ball flight |
 | R | Restart hole |
+| C | Scorecard (tap a hole number to play it) |
 
-On phones and tablets the on-screen buttons do the same: aim ◀ ▶ (hold), club ▲ ▼, overhead ⌖, view ◐, skip ⏭, restart ↺.
+On phones and tablets the on-screen buttons do the same: aim ◀ ▶ (hold), club ▲ ▼, overhead ⌖, skip ⏭, restart ↺, scorecard ▤. The Photoreal / Stylized switch is at the top right.
 
 URL options: `?wind=<mph>&windDir=<deg>`, `?flyover=0`, `?splat=<url>` or `?splat=none`,
 `?course=<course json>`.
@@ -95,15 +96,28 @@ copy, which the game decodes. Without it, a build ships no splat.
 
 ### Any course from OpenStreetMap + public elevation
 
+Many courses are already traced in OpenStreetMap (fairways, greens, bunkers, water, tees,
+`golf=hole` lines with par). That plus public elevation gives every hole of a course in the
+stylized look.
+
+1. Get the data. Either run `npx tsx scripts/fetch-osm.ts course way <id> osm.json`, or open
+   https://overpass-turbo.eu, run a query for the course's golf features with `out geom;`,
+   and use Export → "raw OSM data".
+2. Bake it: `npx tsx scripts/bake-course.ts osm.json public/courses/my-course.json`. Add
+   `"1-9"` to bake only some holes. Elevation comes from AWS Terrain Tiles (Terrarium).
+   Bunkers are dug in, water sits below its banks, and tee boxes are levelled.
+3. Play it: open `/?course=courses/my-course.json`. Add `&hole=7` to start on a hole.
+
+To keep a photoreal hole inside a mapped course, attach its capture. The map's tee and
+green fix the capture's position, rotation and true scale:
+
 ```bash
-npx tsx scripts/fetch-osm.ts nearby 54.34 -1.45 15          # find courses near a point
-npx tsx scripts/fetch-osm.ts course way <id> osm.json       # golf features of one course
-npx tsx scripts/bake-course.ts osm.json 2 public/courses/my-hole.json
-# then open /?course=courses/my-hole.json
+npx tsx scripts/attach-splat.ts public/courses/my-course.json public/courses/romanby-h2.json 2 \
+  public/courses/my-course.json romanby-hole2.splat.b64.txt
 ```
 
-Hole layouts come from OSM `golf=*` tags and elevation from AWS Terrain Tiles (Terrarium).
-That covers any mapped course, but with stylized visuals only until someone captures a splat.
+`npx tsx scripts/make-sample-course.ts osm.json` writes a synthetic three-hole course (not a
+real place) for trying the pipeline offline.
 
 ## Code map
 
@@ -111,9 +125,9 @@ That covers any mapped course, but with stylized visuals only until someone capt
 | --- | --- |
 | `src/physics/ball.ts` | 240 Hz ball flight (drag + Magnus lift, calibrated to tour carries), bounce/roll by lie, cup capture |
 | `src/swing/analogSwing.ts` | TW08-style analog swing → launch parameters |
-| `src/game/session.ts` | Hole state machine: clubs, strokes, water/OB penalties, holing out |
-| `src/course/` | Course schema, terrain queries, OSM converter |
-| `src/render/` | Stylized terrain, Spark splat layer, broadcast cameras |
+| `src/game/session.ts`, `round.ts` | Hole state machine (clubs, strokes, water/OB penalties, holing out) and the round/scorecard |
+| `src/course/` | Course schema, terrain queries, OSM course baker, splat attachment |
+| `src/render/` | Stylized course look (`courseLook.ts`), Spark splat layer, broadcast cameras |
 | `src/ui/hud.ts` | Broadcast HUD |
 | `pipeline/` | Video → splat → playable hole (Python + C++) |
 
@@ -126,5 +140,5 @@ screenshots.
 
 - The splat looks right only near the drone's flight line (low, straight down the fairway).
   Views from far off that path show floaters. Orbit or grid captures would fix this.
-- Course search UI (M2), in-app capture upload with GPU training (M3), full 18-hole rounds
-  and multiplayer (M4).
+- Course search inside the game needs a small server: the published page cannot call
+  OpenStreetMap directly. Next: in-app capture upload with GPU training, and multiplayer.

@@ -56,6 +56,14 @@ describe("ball flight", () => {
     expect(half / full).toBeLessThan(0.58);
   });
 
+  it("a soft wedge chip runs forward instead of spinning back", () => {
+    const launch = shotFromSwing(clubById("LW"), { power: 0.25, tempo: 1, pathDeg: 0 }, 0);
+    const { final } = simulate(launchBall(v3(0, 0.02, 0), launch, "tee"), env());
+    const carry = -final.firstLanding!.z;
+    expect(carry).toBeGreaterThan(5);
+    expect(-final.pos.z).toBeGreaterThan(carry * 0.9);
+  });
+
   it("wedges stop quickly; drivers run out", () => {
     const pw = fullShot("PW").final;
     const dr = fullShot("1W").final;

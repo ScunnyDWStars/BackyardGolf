@@ -1,31 +1,36 @@
-// Bake one hole from Overpass golf data + Terrarium elevation into game CourseData.
-//   npx tsx scripts/bake-course.ts <osm.json> <holeNumber> <out.json>
+// Bake a course from Overpass golf data + Terrarium elevation into game CourseData.
+//   npx tsx scripts/bake-course.ts <osm.json> <out.json> [holes, e.g. "2" or "1-9"]
 import { readFileSync, writeFileSync } from "node:fs";
-import { bakeHoleFromOsm, type OsmElement } from "../src/course/osm";
+import { bakeCourseFromOsm, type OsmElement } from "../src/course/osm";
 import { makeProjection } from "../src/geo/projection";
 import { makeTerrariumSampler } from "./terrarium";
 
-const [input, holeArg, out] = process.argv.slice(2);
-if (!input || !holeArg || !out) {
-  console.error("usage: bake-course.ts <osm.json> <holeNumber> <out.json>");
+const [input, out, holesArg] = process.argv.slice(2);
+if (!input || !out) {
+  console.error('usage: bake-course.ts <osm.json> <out.json> [holes, e.g. "2" or "1-9"]');
   process.exit(2);
 }
 const elements: OsmElement[] = JSON.parse(readFileSync(input, "utf8")).elements;
-const hole = Number(holeArg);
+let holes: number[] | undefined;
+if (holesArg) {
+  const [a, b] = holesArg.split("-").map(Number);
+  holes = Array.from({ length: (b ?? a) - a + 1 }, (_, i) => a + i);
+}
 
-// First pass with flat ground to learn the area, then sample real heights for it.
-const flat = bakeHoleFromOsm(elements, () => 0, { hole });
+// First pass on flat ground to learn the extent, then sample real heights over it.
+const flat = bakeCourseFromOsm(elements, () => 0, { holes });
 const proj = makeProjection(flat.origin!);
 const hf = flat.heightfield;
-const corners = [
-  proj.toLatLon(hf.originX, hf.originZ),
-  proj.toLatLon(hf.originX + (hf.cols - 1) * hf.cellSize, hf.originZ),
-  proj.toLatLon(hf.originX, hf.originZ + (hf.rows - 1) * hf.cellSize),
-  proj.toLatLon(hf.originX + (hf.cols - 1) * hf.cellSize, hf.originZ + (hf.rows - 1) * hf.cellSize),
-];
-const heightAt = await makeTerrariumSampler(corners);
-const course = bakeHoleFromOsm(elements, heightAt, { hole });
+const samples = [];
+for (let r = 0; r < hf.rows; r += 8)
+  for (let c = 0; c < hf.cols; c += 8) samples.push(proj.toLatLon(hf.originX + c * hf.cellSize, hf.originZ + r * hf.cellSize));
+samples.push(proj.toLatLon(hf.originX + (hf.cols - 1) * hf.cellSize, hf.originZ + (hf.rows - 1) * hf.cellSize));
+const heightAt = await makeTerrariumSampler(samples);
+const course = bakeCourseFromOsm(elements, heightAt, { holes });
 writeFileSync(out, JSON.stringify(course));
 const h = course.heightfield.heights;
-console.log(`hole ${hole}: par ${course.holes[0].par}, ${course.holes[0].lengthYards} yds, ${course.holes[0].areas.length} areas, ` +
-  `relief ${Math.min(...h).toFixed(1)}..${Math.max(...h).toFixed(1)} m -> ${out}`);
+console.log(
+  `${course.name}: ${course.holes.length} holes (${course.holes.map((x) => `${x.number}:par ${x.par} ${x.lengthYards}yd`).join(", ")}), ` +
+    `${course.areas?.length ?? 0} areas, ${course.features?.trees?.length ?? 0} trees, ${course.features?.woods?.length ?? 0} woods, ` +
+    `relief ${Math.min(...h).toFixed(1)}..${Math.max(...h).toFixed(1)} m, ${hf.cols}x${hf.rows} cells -> ${out}`,
+);

@@ -1,5 +1,5 @@
 import { type Vec3, normalize, v3 } from "../math/vec3";
-import type { CourseData, Heightfield, Lie, Polygon2 } from "./types";
+import type { Area, CourseData, Heightfield, Lie, Polygon2 } from "./types";
 
 const LIE_PRIORITY: Lie[] = ["water", "bunker", "green", "tee", "fairway", "rough"];
 
@@ -13,10 +13,21 @@ export function pointInPolygon(x: number, z: number, poly: Polygon2): boolean {
   return inside;
 }
 
+export function boundingBox(poly: Polygon2): [number, number, number, number] {
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  for (const [x, z] of poly) {
+    x0 = Math.min(x0, x);
+    z0 = Math.min(z0, z);
+    x1 = Math.max(x1, x);
+    z1 = Math.max(z1, z);
+  }
+  return [x0, z0, x1, z1];
+}
+
 /** Physics-side view of a course: ground height, normals and lie lookup. */
 export class TerrainModel {
   private readonly hf: Heightfield;
-  private readonly areas: { lie: Lie; polygon: Polygon2 }[];
+  private readonly areas: (Area & { box: [number, number, number, number] })[];
 
   constructor(
     private readonly course: CourseData,
@@ -24,9 +35,9 @@ export class TerrainModel {
   ) {
     this.hf = course.heightfield;
     const hole = course.holes[holeIndex];
-    this.areas = [...hole.areas].sort(
-      (a, b) => LIE_PRIORITY.indexOf(a.lie) - LIE_PRIORITY.indexOf(b.lie),
-    );
+    this.areas = [...(course.areas ?? []), ...hole.areas]
+      .sort((a, b) => LIE_PRIORITY.indexOf(a.lie) - LIE_PRIORITY.indexOf(b.lie))
+      .map((a) => ({ ...a, box: boundingBox(a.polygon) }));
   }
 
   heightAt(x: number, z: number): number {
@@ -52,7 +63,10 @@ export class TerrainModel {
 
   lieAt(x: number, z: number): Lie {
     if (!pointInPolygon(x, z, this.course.bounds)) return "out-of-bounds";
-    for (const area of this.areas) if (pointInPolygon(x, z, area.polygon)) return area.lie;
+    for (const { box, polygon, lie } of this.areas) {
+      if (x < box[0] || x > box[2] || z < box[1] || z > box[3]) continue;
+      if (pointInPolygon(x, z, polygon)) return lie;
+    }
     return "rough";
   }
 

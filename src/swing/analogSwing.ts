@@ -167,7 +167,8 @@ export function shotFromSwing(
   // makes the meter read linearly in distance, like TW08's.
   const powerSpeed = swing.power <= 1 ? Math.pow(swing.power, 0.6) : 1 + (swing.power - 1) * 0.5;
   const speed = club.ballSpeed * powerSpeed * tempoLoss * lie.speed;
-  const backspin = club.backspinRpm * (0.6 + 0.4 * Math.min(1, swing.power)) * lie.spin;
+  // Spin scales with ball speed: a soft chip with a wedge spins far less than a full swing.
+  const backspin = club.backspinRpm * Math.min(1, powerSpeed) * lie.spin;
   const sidespin = Math.max(-3500, Math.min(3500, path * 220));
   return {
     speed,

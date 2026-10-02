@@ -49,6 +49,15 @@ export class Hud {
         <button type="button" data-act="clubDown" aria-label="Shorter club">▼</button>
         <button type="button" data-act="skip" aria-label="Skip flyover or ball flight">⏭</button>
         <button type="button" data-act="restart" aria-label="Restart hole">↺</button>
+        <button type="button" data-act="scorecard" aria-label="Scorecard">▤</button>
+      </div>
+      <div class="scorecard" data-k="scorecard" role="dialog" aria-label="Scorecard" hidden>
+        <div class="card">
+          <div class="card-head"><strong data-k="cardCourse"></strong><span data-k="cardTotal"></span></div>
+          <div class="card-table"><table data-k="cardTable"></table></div>
+          <p class="card-hint">Tap a hole number to play it.</p>
+          <div class="card-actions" data-k="cardActions"></div>
+        </div>
       </div>`;
     parent.appendChild(this.root);
     this.root.querySelectorAll<HTMLElement>("[data-k]").forEach((el) => (this.els[el.dataset.k!] = el));
@@ -99,6 +108,7 @@ export class Hud {
     setView(view: "splat" | "stylized"): void;
     skip(): void;
     restart(): void;
+    scorecard(): void;
   }) {
     const taps: Record<string, () => void> = {
       clubUp: () => a.club(-1),
@@ -106,6 +116,7 @@ export class Hud {
       overhead: a.overhead,
       skip: a.skip,
       restart: a.restart,
+      scorecard: a.scorecard,
     };
     this.root.querySelectorAll<HTMLButtonElement>(".view-switch button").forEach((b) => {
       b.addEventListener("click", () => a.setView(b.dataset.view as "splat" | "stylized"));
@@ -136,6 +147,91 @@ export class Hud {
         b.classList.toggle("unavailable", splat === "none");
       }
     });
+  }
+
+  get scorecardOpen(): boolean {
+    return !this.els.scorecard.hidden;
+  }
+
+  hideScorecard() {
+    this.els.scorecard.hidden = true;
+  }
+
+  /** Show the scorecard. Scores use card conventions: circle under par, square over. */
+  showScorecard(
+    card: {
+      course: string;
+      holes: { number: number; par: number; yards: number; score: number | null }[];
+      current: number;
+      toPar: number;
+      played: number;
+    },
+    actions: { label: string; primary?: boolean; run: () => void }[],
+    onPick: (index: number) => void,
+  ) {
+    this.set("cardCourse", card.course);
+    const rel = card.toPar === 0 ? "E" : card.toPar > 0 ? `+${card.toPar}` : String(card.toPar);
+    this.set("cardTotal", card.played ? `${rel} through ${card.played}` : "No holes played yet");
+    const t = this.els.cardTable;
+    t.replaceChildren();
+    const row = (label: string, cells: (string | HTMLElement)[], cls = "") => {
+      const tr = document.createElement("tr");
+      if (cls) tr.className = cls;
+      const th = document.createElement("th");
+      th.scope = "row";
+      th.textContent = label;
+      tr.append(th);
+      for (const c of cells) {
+        const td = document.createElement("td");
+        if (typeof c === "string") td.textContent = c;
+        else td.append(c);
+        tr.append(td);
+      }
+      t.append(tr);
+    };
+    const totalPar = card.holes.reduce((a, h) => a + h.par, 0);
+    const totalYds = card.holes.reduce((a, h) => a + h.yards, 0);
+    const strokes = card.holes.reduce((a, h) => a + (h.score ?? 0), 0);
+    const holeButtons = card.holes.map((h, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = String(h.number);
+      b.className = i === card.current ? "current" : "";
+      b.setAttribute("aria-label", `Play hole ${h.number}`);
+      b.addEventListener("click", () => onPick(i));
+      return b;
+    });
+    row("Hole", [...holeButtons, "Tot"], "hole-row");
+    row("Yds", [...card.holes.map((h) => String(h.yards)), String(totalYds)]);
+    row("Par", [...card.holes.map((h) => String(h.par)), String(totalPar)]);
+    row(
+      "Score",
+      [
+        ...card.holes.map((h) => {
+          const span = document.createElement("span");
+          span.textContent = h.score === null ? "" : String(h.score);
+          if (h.score !== null) {
+            const d = h.score - h.par;
+            span.className = d <= -2 ? "eagle" : d === -1 ? "birdie" : d === 1 ? "bogey" : d >= 2 ? "double" : "par";
+          }
+          return span;
+        }),
+        card.played ? String(strokes) : "",
+      ],
+      "score-row",
+    );
+    const act = this.els.cardActions;
+    act.replaceChildren(
+      ...actions.map((a) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = a.label;
+        if (a.primary) b.className = "primary";
+        b.addEventListener("click", a.run);
+        return b;
+      }),
+    );
+    this.els.scorecard.hidden = false;
   }
 
   hideToast() {

@@ -136,7 +136,11 @@ function bounce(state: BallState, env: Environment): void {
   // Backspin makes (omega x n) point backwards, so high-spin wedges check up.
   const spinTerm = scale(cross(state.spin, n), BALL_RADIUS);
   const rolling = scale(add(scale(vt, 5), scale(spinTerm, 2)), 1 / 7);
-  const newVt = add(scale(vt, 1 - surf.grip), scale(rolling, surf.grip));
+  let newVt = add(scale(vt, 1 - surf.grip), scale(rolling, surf.grip));
+  // Spin can check a ball up and draw it back a little, but never fire it back faster than
+  // a fifth of its incoming speed (real wedges "zip back" a few yards at most).
+  const along = dot(newVt, normalize(vt));
+  if (along < 0) newVt = sub(newVt, scale(normalize(vt), along + Math.min(-along, 0.2 * length(vt))));
   const newVn = -vn * surf.restitution;
   state.vel = add(newVt, scale(n, Math.abs(newVn)));
   state.spin = scale(state.spin, 0.35);

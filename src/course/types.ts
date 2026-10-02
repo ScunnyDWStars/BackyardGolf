@@ -5,6 +5,18 @@ export type Lie = "tee" | "fairway" | "rough" | "green" | "bunker" | "water" | "
 /** A polygon on the ground plane, as [x, z] pairs in hole-frame metres. */
 export type Polygon2 = [number, number][];
 
+export interface Area {
+  lie: Lie;
+  polygon: Polygon2;
+}
+
+/** Scenery from the map: individual trees, woods/scrub to fill, and tree rows. */
+export interface CourseFeatures {
+  trees?: [number, number][];
+  woods?: { kind: "wood" | "scrub"; polygon: Polygon2 }[];
+  treeRows?: [number, number][][];
+}
+
 export interface Heightfield {
   /** World x/z of grid cell (0, 0). */
   originX: number;
@@ -22,18 +34,21 @@ export interface SplatInfo {
   url?: string;
   /** Row-major 4x4 transform from the splat's file frame into the hole frame. */
   matrix: number[][];
+  /** Hole numbers the capture covers; omitted means every hole. */
+  holes?: number[];
 }
 
 export interface HoleData {
   number: number;
+  name?: string;
   par: number;
   lengthYards: number;
   tee: Vec3;
   pin: Vec3;
   /** Centre line from tee to green, used for camera flyovers and aiming defaults. */
   centerline: [number, number][];
-  /** Polygons by lie, highest priority first is resolved by TerrainModel. */
-  areas: { lie: Lie; polygon: Polygon2 }[];
+  /** Polygons by lie for this hole only; overlaps are resolved by TerrainModel. */
+  areas: Area[];
 }
 
 export interface CourseData {
@@ -45,6 +60,9 @@ export interface CourseData {
   heightfield: Heightfield;
   /** Playable boundary; outside is out of bounds. */
   bounds: Polygon2;
+  /** Lie polygons shared by the whole course (from map data). */
+  areas?: Area[];
+  features?: CourseFeatures;
   holes: HoleData[];
   splat?: SplatInfo;
 }

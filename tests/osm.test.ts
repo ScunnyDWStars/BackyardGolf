@@ -48,3 +48,47 @@ describe("OSM course baking", () => {
     expect(t.y).toBeCloseTo(1);
   });
 });
+
+describe("whole-course baking", () => {
+  const flat = () => 10;
+
+  it("bakes every hole with pins, pars and shared areas", async () => {
+    const { sampleCourseOsm } = await import("./sampleOsm");
+    const { bakeCourseFromOsm } = await import("../src/course/osm");
+    const course = bakeCourseFromOsm(sampleCourseOsm().elements, flat);
+    expect(course.name).toBe("Sample Course (synthetic)");
+    expect(course.holes.map((h) => [h.number, h.par])).toEqual([[1, 4], [2, 3], [3, 5]]);
+    expect(course.holes[0].pin.x).toBeCloseTo(60, 0); // golf=pin node wins over the line end
+    expect(course.holes[0].pin.z).toBeCloseTo(-355, 0);
+    expect(course.areas!.filter((a) => a.lie === "bunker")).toHaveLength(10);
+    expect(course.features!.trees).toHaveLength(7);
+    expect(course.features!.woods!.map((w) => w.kind).sort()).toEqual(["scrub", "wood"]);
+    expect(course.features!.treeRows).toHaveLength(1);
+
+    // Lies resolve against course-wide areas from any hole.
+    const t2 = new TerrainModel(course, 1);
+    expect(t2.lieAt(178, -334)).toBe("water");
+    expect(t2.lieAt(252, -330)).toBe("green");
+    expect(t2.lieAt(500, 0)).toBe("out-of-bounds");
+  });
+
+  it("shapes the ground: bunkers below, water below its banks, tees level", async () => {
+    const { sampleCourseOsm } = await import("./sampleOsm");
+    const { bakeCourseFromOsm } = await import("../src/course/osm");
+    const course = bakeCourseFromOsm(sampleCourseOsm().elements, flat);
+    const t = new TerrainModel(course, 0);
+    // Heights are relative to the first tee, which is levelled and raised 0.3 m.
+    const fairway = t.heightAt(0, -150);
+    expect(t.heightAt(24, -238)).toBeLessThan(fairway - 0.2);
+    expect(t.heightAt(178, -334)).toBeLessThan(fairway - 0.7);
+    expect(t.heightAt(0, -4)).toBeGreaterThan(fairway + 0.2);
+  });
+
+  it("joins multipolygon members into rings", async () => {
+    const { assembleRings } = await import("../src/course/osm");
+    const a = { lat: 0, lon: 0 }, b = { lat: 0, lon: 1 }, c = { lat: 1, lon: 1 }, d = { lat: 1, lon: 0 };
+    const rings = assembleRings([[a, b], [c, b], [c, d, a]]);
+    expect(rings).toHaveLength(1);
+    expect(rings[0]).toHaveLength(5);
+  });
+});

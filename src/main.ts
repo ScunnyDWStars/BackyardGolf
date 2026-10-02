@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import "./style.css";
 import type { CourseData } from "./course/types";
-import { HoleSession } from "./game/session";
+import { Round } from "./game/round";
 import { v3 } from "./math/vec3";
 import { CameraDirector } from "./render/cameraDirector";
 import { createScene } from "./render/scene";
@@ -31,7 +31,10 @@ async function main() {
   const windMph = Number(params.get("wind") ?? 6);
   const windDir = Number(params.get("windDir") ?? 200) * (Math.PI / 180);
   const wind = v3(Math.sin(windDir) * windMph * 0.447, 0, -Math.cos(windDir) * windMph * 0.447);
-  let session = new HoleSession(course, 0, wind);
+  // ?hole=<number> starts on a given hole (useful for testing and sharing a hole).
+  const startIndex = Math.max(0, course.holes.findIndex((h) => h.number === Number(params.get("hole"))));
+  const round = new Round(course, wind, startIndex);
+  let session = round.session;
 
   const terrainGroup = buildStylizedTerrain(course, session.terrain);
   scene.add(terrainGroup);
@@ -41,9 +44,18 @@ async function main() {
   scene.add(ball);
   const aim = new AimMarker();
   scene.add(aim.group);
-  const grid = buildPuttingGrid(session.terrain, toV(session.hole.pin));
+  let grid = buildPuttingGrid(session.terrain, toV(session.hole.pin));
   grid.visible = false;
   scene.add(grid);
+  /** Move the flag and rebuild the putting grid for the current hole. */
+  const placeHoleProps = () => {
+    pin.position.copy(toV(session.hole.pin));
+    scene.remove(grid);
+    grid.geometry.dispose();
+    grid = buildPuttingGrid(session.terrain, toV(session.hole.pin));
+    grid.visible = false;
+    scene.add(grid);
+  };
   const trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }));
   scene.add(trail);
   const trailPts: THREE.Vector3[] = [];
@@ -63,13 +75,16 @@ async function main() {
   let preferred: ViewMode = params.get("view") === "stylized" ? "stylized" : readPreference();
   let splatState: "loading" | "ready" | "none" = "none";
   let view: ViewMode = "stylized";
+  // A splat usually covers only the hole(s) that were filmed.
+  const splatCovers = () => !course.splat?.holes || course.splat.holes.includes(session.hole.number);
+  const viewState = () => (splatCovers() ? splatState : "none");
   const setView = (v: ViewMode) => {
-    view = v === "splat" && !splat.loaded ? "stylized" : v;
+    view = v === "splat" && (!splat.loaded || !splatCovers()) ? "stylized" : v;
     terrainGroup.visible = view === "stylized";
     splat.group.visible = view === "splat";
     scene.fog = view === "splat" ? null : new THREE.Fog(0xcfe0ec, 250, 900);
     director.splatFraming = view === "splat";
-    hud.setViewState(view, splatState);
+    hud.setViewState(view, viewState());
     if (session.phase === "address" && director.mode !== "flyover" && director.mode !== "overhead") frameAddress(true);
   };
   /** The player picked a look: remember it and switch (or switch once the splat arrives). */
@@ -80,14 +95,14 @@ async function main() {
     } catch {
       // Not persisted; the choice still applies for this visit.
     }
-    if (v === "splat" && splatState === "loading") hud.toast("Photoreal course is still loading — it will switch when ready");
-    else if (v === "splat" && splatState === "none") hud.toast("No photoreal course for this hole yet");
+    if (v === "splat" && viewState() === "loading") hud.toast("Photoreal course is still loading — it will switch when ready");
+    else if (v === "splat" && viewState() === "none") hud.toast("No photoreal course for this hole yet");
     else hud.hideToast();
     setView(v);
   };
   const loadSplat = async (src: SplatSource, quiet = false) => {
     splatState = "loading";
-    hud.setViewState(view, splatState);
+    hud.setViewState(view, viewState());
     try {
       const n = await splat.load(src);
       splatState = "ready";
@@ -98,7 +113,7 @@ async function main() {
       document.body.dataset.splat = "loaded";
     } catch (err) {
       splatState = splat.loaded ? "ready" : "none";
-      hud.setViewState(view, splatState);
+      hud.setViewState(view, viewState());
       if (quiet) hud.hideToast();
       else hud.toast(`Could not load splat: ${err}`);
     }
@@ -113,11 +128,11 @@ async function main() {
       .then((src) => loadSplat(src, true))
       .catch(() => {
         splatState = "none";
-        hud.setViewState(view, splatState);
+        hud.setViewState(view, viewState());
         hud.hideToast();
       });
   }
-  hud.setViewState(view, splatState);
+  hud.setViewState(view, viewState());
   const picker = document.createElement("input");
   picker.type = "file";
   picker.accept = ".ply,.spz,.splat,.ksplat,.sog";
@@ -134,10 +149,17 @@ async function main() {
   const putting = () => session.club.isPutter === true;
   const frameAddress = (snap = false) => director.frameAddress(toV(session.ballPos), session.aimHeading, putting(), snap);
 
-  const startHole = (flyover: boolean) => {
-    session = new HoleSession(course, 0, wind);
+  let cardTimer = 0;
+  const startHole = (index: number, flyover: boolean) => {
+    session = round.play(index);
+    placeHoleProps();
     trailPts.length = 0;
     trail.geometry.setFromPoints([]);
+    cardTimer = 0;
+    hud.hideScorecard();
+    hud.hideToast();
+    delete document.body.dataset.holed;
+    setView(preferred);
     if (flyover && params.get("flyover") !== "0") {
       director.startFlyover(session.hole.centerline, toV(session.hole.pin));
       hud.setHelp("Hole flyover — click or press Space to skip");
@@ -146,7 +168,29 @@ async function main() {
     }
   };
   director.onFlyoverDone = () => frameAddress(true);
-  startHole(true);
+  startHole(startIndex, true);
+
+  /** Scorecard data for the HUD. */
+  const showCard = (afterHole: boolean) => {
+    const totals = round.totals();
+    const next = round.nextIndex();
+    const acts: { label: string; primary?: boolean; run: () => void }[] = [];
+    if (afterHole && next !== null) acts.push({ label: `Next: hole ${course.holes[next].number} ▶`, primary: true, run: () => startHole(next, true) });
+    if (afterHole && next === null) acts.push({ label: "New round", primary: true, run: () => { round.scores.fill(null); startHole(0, true); } });
+    if (!afterHole) acts.push({ label: "Close", primary: true, run: () => hud.hideScorecard() });
+    acts.push({ label: `Replay hole ${session.hole.number}`, run: () => startHole(round.holeIndex, false) });
+    hud.showScorecard(
+      {
+        course: course.name,
+        holes: course.holes.map((h, i) => ({ number: h.number, par: h.par, yards: h.lengthYards, score: round.scores[i] })),
+        current: round.holeIndex,
+        toPar: totals.toPar,
+        played: totals.played,
+      },
+      acts,
+      (i) => startHole(i, true),
+    );
+  };
 
   // --- input -------------------------------------------------------------------------
   const canSwing = () => session.phase === "address" && director.mode !== "flyover";
@@ -213,7 +257,11 @@ async function main() {
       picker.click();
     },
     restart() {
-      startHole(false);
+      startHole(round.holeIndex, false);
+    },
+    scorecard() {
+      if (hud.scorecardOpen) hud.hideScorecard();
+      else showCard(session.phase === "holed");
     },
     aim(dir: -1 | 0 | 1) {
       aimHeld.left = dir < 0;
@@ -233,6 +281,8 @@ async function main() {
     if (e.key === "v") actions.toggleView();
     if (e.key === "l") actions.loadSplat();
     if (e.key === "r") actions.restart();
+    if (e.key === "c") actions.scorecard();
+    if (e.key === "Escape") hud.hideScorecard();
   });
   window.addEventListener("keyup", (e) => {
     aimHeld.fast = e.shiftKey;
@@ -262,12 +312,18 @@ async function main() {
     if (cameToRest) {
       const r = session.lastResult!;
       if (session.phase === "holed") {
-        hud.toast(`${hud.scoreName(session.strokes, session.hole.par)}! ${session.strokes} strokes — press R or ↺ to replay`, 8000);
+        round.record();
+        hud.toast(`${hud.scoreName(session.strokes, session.hole.par)}! ${session.strokes} strokes`, 2600);
         document.body.dataset.holed = "true";
+        cardTimer = 2.4;
       } else {
         hud.toast(hud.shotSummary(r));
       }
       restTimer = 1.4;
+    }
+    if (cardTimer > 0) {
+      cardTimer -= dt;
+      if (cardTimer <= 0 && session.phase === "holed") showCard(true);
     }
     if (restTimer > 0) {
       restTimer -= dt;
@@ -291,7 +347,7 @@ async function main() {
           ? "Space: skip"
           : touchScreen
             ? "Swing: drag down, then push up"
-            : "Swing: drag down, then push up · ←/→ aim · ↑/↓ club · O overhead · V photoreal/stylized · L load splat · R restart",
+            : "Swing: drag down, then push up · ←/→ aim · ↑/↓ club · O overhead · V photoreal/stylized · C scorecard · R restart",
       );
     }
     director.update(dt, ballPos, toV(session.ball?.vel ?? v3()));
@@ -306,6 +362,8 @@ async function main() {
     get session() {
       return session;
     },
+    round,
+    startHole,
     get view() {
       return view;
     },

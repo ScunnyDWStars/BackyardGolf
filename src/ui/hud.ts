@@ -37,14 +37,16 @@ export class Hud {
       <div class="meter"><div class="fill" data-k="meterFill"></div><div class="full-line"></div></div>
       <div class="toast" data-k="toast"></div>
       <div class="help" data-k="help"></div>
-      <div class="panel view" data-k="view"></div>
+      <div class="view-switch" role="group" aria-label="Course look">
+        <button type="button" data-view="splat" aria-pressed="false">Photoreal</button>
+        <button type="button" data-view="stylized" aria-pressed="true">Stylized</button>
+      </div>
       <div class="controls" role="toolbar" aria-label="Shot controls">
         <button type="button" data-hold="-1" aria-label="Aim left">◀</button>
         <button type="button" data-act="clubUp" aria-label="Longer club">▲</button>
         <button type="button" data-hold="1" aria-label="Aim right">▶</button>
         <button type="button" data-act="overhead" aria-label="Overhead view">⌖</button>
         <button type="button" data-act="clubDown" aria-label="Shorter club">▼</button>
-        <button type="button" data-act="toggleView" aria-label="Photoreal or stylized view">◐</button>
         <button type="button" data-act="skip" aria-label="Skip flyover or ball flight">⏭</button>
         <button type="button" data-act="restart" aria-label="Restart hole">↺</button>
       </div>`;
@@ -56,7 +58,7 @@ export class Hud {
     if (this.els[k].textContent !== text) this.els[k].textContent = text;
   }
 
-  update(s: HoleSession, courseName: string, viewLabel: string) {
+  update(s: HoleSession, courseName: string) {
     this.set("hole", String(s.hole.number));
     this.set("course", courseName);
     this.set("par", `Par ${s.hole.par} · ${s.hole.lengthYards} yds`);
@@ -67,7 +69,6 @@ export class Hud {
     this.set("lie", `Lie: ${LIE_NAMES[s.lie] ?? s.lie}`);
     const d = s.distanceToPin;
     this.set("toPin", s.lie === "green" && d < 30 ? `${(d * 3.28084).toFixed(0)} ft` : `${yd(d)} yds`);
-    this.set("view", viewLabel);
     this.updateWind(s.wind, s.aimHeading);
   }
 
@@ -95,7 +96,7 @@ export class Hud {
     aim(dir: -1 | 0 | 1): void;
     club(delta: number): void;
     overhead(): void;
-    toggleView(): void;
+    setView(view: "splat" | "stylized"): void;
     skip(): void;
     restart(): void;
   }) {
@@ -103,10 +104,12 @@ export class Hud {
       clubUp: () => a.club(-1),
       clubDown: () => a.club(1),
       overhead: a.overhead,
-      toggleView: a.toggleView,
       skip: a.skip,
       restart: a.restart,
     };
+    this.root.querySelectorAll<HTMLButtonElement>(".view-switch button").forEach((b) => {
+      b.addEventListener("click", () => a.setView(b.dataset.view as "splat" | "stylized"));
+    });
     this.root.querySelectorAll<HTMLButtonElement>(".controls button").forEach((b) => {
       const hold = b.dataset.hold;
       if (hold) {
@@ -118,6 +121,19 @@ export class Hud {
         for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) b.addEventListener(ev, () => a.aim(0));
       } else {
         b.addEventListener("click", () => taps[b.dataset.act!]?.());
+      }
+    });
+  }
+
+  /** Reflect the current look; Photoreal is disabled while loading or when there is no splat. */
+  setViewState(view: "splat" | "stylized", splat: "loading" | "ready" | "none") {
+    this.root.querySelectorAll<HTMLButtonElement>(".view-switch button").forEach((b) => {
+      const isSplat = b.dataset.view === "splat";
+      b.setAttribute("aria-pressed", String(b.dataset.view === view));
+      if (isSplat) {
+        b.textContent = splat === "loading" ? "Photoreal…" : "Photoreal";
+        b.title = splat === "none" ? "No photoreal course for this hole" : splat === "loading" ? "Loading" : "";
+        b.classList.toggle("unavailable", splat === "none");
       }
     });
   }

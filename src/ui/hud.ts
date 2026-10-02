@@ -37,7 +37,17 @@ export class Hud {
       <div class="meter"><div class="fill" data-k="meterFill"></div><div class="full-line"></div></div>
       <div class="toast" data-k="toast"></div>
       <div class="help" data-k="help"></div>
-      <div class="panel view" data-k="view"></div>`;
+      <div class="panel view" data-k="view"></div>
+      <div class="controls" role="toolbar" aria-label="Shot controls">
+        <button type="button" data-hold="-1" aria-label="Aim left">◀</button>
+        <button type="button" data-act="clubUp" aria-label="Longer club">▲</button>
+        <button type="button" data-hold="1" aria-label="Aim right">▶</button>
+        <button type="button" data-act="overhead" aria-label="Overhead view">⌖</button>
+        <button type="button" data-act="clubDown" aria-label="Shorter club">▼</button>
+        <button type="button" data-act="toggleView" aria-label="Photoreal or stylized view">◐</button>
+        <button type="button" data-act="skip" aria-label="Skip flyover or ball flight">⏭</button>
+        <button type="button" data-act="restart" aria-label="Restart hole">↺</button>
+      </div>`;
     parent.appendChild(this.root);
     this.root.querySelectorAll<HTMLElement>("[data-k]").forEach((el) => (this.els[el.dataset.k!] = el));
   }
@@ -78,6 +88,42 @@ export class Hud {
     this.els.meterFill.parentElement!.classList.add("active");
     fill.style.height = `${Math.min(110, power * 100) / 1.1}%`;
     fill.classList.toggle("over", power > 1.0);
+  }
+
+  /** Wire the on-screen buttons. Aim buttons act while held, like the arrow keys. */
+  bindControls(a: {
+    aim(dir: -1 | 0 | 1): void;
+    club(delta: number): void;
+    overhead(): void;
+    toggleView(): void;
+    skip(): void;
+    restart(): void;
+  }) {
+    const taps: Record<string, () => void> = {
+      clubUp: () => a.club(-1),
+      clubDown: () => a.club(1),
+      overhead: a.overhead,
+      toggleView: a.toggleView,
+      skip: a.skip,
+      restart: a.restart,
+    };
+    this.root.querySelectorAll<HTMLButtonElement>(".controls button").forEach((b) => {
+      const hold = b.dataset.hold;
+      if (hold) {
+        const dir = Number(hold) as -1 | 1;
+        b.addEventListener("pointerdown", (e) => {
+          b.setPointerCapture(e.pointerId);
+          a.aim(dir);
+        });
+        for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) b.addEventListener(ev, () => a.aim(0));
+      } else {
+        b.addEventListener("click", () => taps[b.dataset.act!]?.());
+      }
+    });
+  }
+
+  hideToast() {
+    this.els.toast.classList.remove("show");
   }
 
   setHelp(text: string) {

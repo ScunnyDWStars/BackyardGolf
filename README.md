@@ -25,6 +25,8 @@ npm run dev          # http://localhost:5173
 | Space | Skip flyover / ball flight |
 | R | Restart hole |
 
+On phones and tablets the on-screen buttons do the same: aim ◀ ▶ (hold), club ▲ ▼, overhead ⌖, view ◐, skip ⏭, restart ↺.
+
 URL options: `?wind=<mph>&windDir=<deg>`, `?flyover=0`, `?splat=<url>` or `?splat=none`,
 `?course=<course json>`.
 
@@ -78,6 +80,18 @@ python render_view.py ../../$W/splat/ckpt.pt ../../$W/align.json \
 
 `python pipeline/tests/test_rasterize.py` checks the C++ rasterizer's forward pass and
 gradients against a dense PyTorch reference.
+
+### Private build with the splat bundled
+
+```bash
+python pipeline/splat/export_splat.py data/romanby-h2-full/splat/ckpt.pt dist-splat.splat \
+  --base64 romanby-hole2.splat.b64.txt     # 2.9 MB .splat, base64 copy for text-only hosts
+VITE_SPLAT_URL=romanby-hole2.splat.b64.txt npm run build
+cp romanby-hole2.splat.b64.txt dist/        # keep this build private (club footage)
+```
+
+`VITE_SPLAT_URL` may point at a `.ply`, `.spz` or `.splat` directly, or at a `*.b64.txt`
+copy, which the game decodes. Without it, a build ships no splat.
 
 ### Any course from OpenStreetMap + public elevation
 

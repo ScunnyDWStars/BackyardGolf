@@ -1,30 +1,37 @@
+/* Full-bleed broadcast overlay: one committed look over the 3D view, in light or dark hosts. */
 :root {
+  color-scheme: dark;
   --panel: rgb(10 22 40 / 0.78);
   --panel-edge: rgb(255 255 255 / 0.18);
   --accent: #ffd23f;
   --text: #f4f7fb;
+  --sky: #9cc4e8;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc4e8; color: var(--text);
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--sky); color: var(--text);
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+#app { position: fixed; inset: 0; }
 #app canvas { display: block; touch-action: none; cursor: crosshair; }
 .hud { position: fixed; inset: 0; pointer-events: none; }
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--panel-edge);
   border-radius: 6px; padding: 8px 12px; box-shadow: 0 4px 18px rgb(0 0 0 / 0.25); }
-.hole-card { top: 16px; left: 16px; display: grid; grid-template-columns: auto auto; gap: 2px 12px; align-items: center; }
-.hole-no { grid-row: span 2; font-size: 38px; font-weight: 800; color: var(--accent); line-height: 1; }
+.hole-card { top: calc(16px + var(--sat)); left: 16px; display: grid; grid-template-columns: auto auto; gap: 2px 12px; align-items: center; }
+.hole-no { grid-row: span 2; font-family: var(--display); font-size: 44px; font-weight: 700; color: var(--accent); line-height: 1; }
 .hole-meta { display: flex; flex-direction: column; font-size: 13px; }
 .hole-meta span:first-child { font-weight: 700; font-size: 15px; }
 .stroke { grid-column: 1 / -1; font-size: 13px; border-top: 1px solid var(--panel-edge); padding-top: 4px; }
-.wind { top: 16px; right: 16px; text-align: center; min-width: 76px; font-size: 13px; }
+.wind { top: calc(16px + var(--sat)); right: 16px; text-align: center; min-width: 76px; font-size: 13px; }
 .wind .arrow { font-size: 24px; color: var(--accent); transition: transform 0.2s; }
-.shot-info { bottom: 16px; left: 16px; min-width: 190px; }
-.shot-info .club { font-size: 20px; font-weight: 700; }
+.shot-info { bottom: calc(16px + var(--sab)); left: 16px; min-width: 190px; }
+.shot-info .club { font-family: var(--display); font-size: 24px; font-weight: 600; letter-spacing: 0.02em; }
 .shot-info .carry, .shot-info .lie { font-size: 13px; opacity: 0.9; }
-.to-pin { bottom: 16px; left: 50%; transform: translateX(-50%); text-align: center; }
+.to-pin { bottom: calc(16px + var(--sab)); left: 50%; transform: translateX(-50%); text-align: center; }
 .to-pin .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
-.to-pin .big { font-size: 26px; font-weight: 800; }
-.view { top: 92px; right: 16px; font-size: 12px; }
+.to-pin .big { font-family: var(--display); font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.view { top: calc(92px + var(--sat)); right: 16px; font-size: 12px; }
 .meter { position: absolute; right: 28px; top: 50%; width: 18px; height: 240px; transform: translateY(-50%);
   border: 2px solid rgb(255 255 255 / 0.8); border-radius: 9px; overflow: hidden; opacity: 0; transition: opacity 0.15s;
   background: rgb(0 0 0 / 0.35); }
@@ -36,11 +43,26 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc4e8; col
   background: var(--panel); border-radius: 30px; font-size: 18px; font-weight: 600; opacity: 0;
   transition: opacity 0.25s, transform 0.25s; white-space: nowrap; max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
-.help { position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%); font-size: 12px;
+.help { position: absolute; bottom: calc(92px + var(--sab)); left: 50%; transform: translateX(-50%); font-size: 12px;
   text-shadow: 0 1px 3px #000; opacity: 0.9; text-align: center; width: calc(100vw - 32px); }
+.controls { position: absolute; right: 16px; bottom: calc(16px + var(--sab)); display: grid;
+  grid-template-columns: repeat(3, 44px); gap: 6px; pointer-events: auto; }
+.controls button { width: 44px; height: 44px; border-radius: 6px; border: 1px solid var(--panel-edge);
+  background: var(--panel); color: var(--text); font-size: 18px; line-height: 1; cursor: pointer;
+  touch-action: none; user-select: none; -webkit-user-select: none; }
+.controls button:active { background: rgb(255 210 63 / 0.35); }
+.controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shot-info { bottom: calc(16px + var(--sab)); }
 @media (max-width: 640px) {
-  .hole-no { font-size: 28px; }
-  .shot-info { min-width: 0; bottom: 84px; }
-  .to-pin { bottom: 16px; }
-  .help { bottom: 150px; }
+  .hole-no { font-size: 32px; }
+  .shot-info { min-width: 0; bottom: calc(16px + var(--sab)); padding: 6px 10px; }
+  .shot-info .club { font-size: 20px; }
+  .to-pin { top: calc(104px + var(--sat)); bottom: auto; padding: 4px 12px; }
+  .to-pin .big { font-size: 24px; }
+  .view { display: none; }
+  .help { bottom: calc(176px + var(--sab)); font-size: 11px; }
+  .meter { top: 42%; height: 180px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast, .wind .arrow, .meter { transition: none; }
 }

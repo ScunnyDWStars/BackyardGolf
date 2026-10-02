@@ -5,7 +5,7 @@ import { HoleSession } from "./game/session";
 import { v3 } from "./math/vec3";
 import { CameraDirector } from "./render/cameraDirector";
 import { createScene } from "./render/scene";
-import { SplatLayer, type SplatSource, matrixFromRows } from "./render/splatLayer";
+import { SplatLayer, type SplatSource, matrixFromRows, splatSourceFromUrl } from "./render/splatLayer";
 import { AimMarker, buildBall, buildPin, buildPuttingGrid, buildStylizedTerrain } from "./render/stylizedTerrain";
 import { AnalogSwing, defaultSwingConfig } from "./swing/analogSwing";
 import { Hud } from "./ui/hud";
@@ -14,10 +14,12 @@ type ViewMode = "stylized" | "splat";
 
 const params = new URLSearchParams(location.search);
 const courseUrl = params.get("course") ?? "courses/romanby-h2.json";
-// The trained splat is not shipped in the repo; in dev it is served from the local data/ dir.
-const defaultSplatUrl = "/data/romanby-h2-full/splat/splat.ply";
+// The trained splat is not in the repo (it is derived from third-party footage). Dev serves it
+// from the local data/ dir; a private build bundles it by setting VITE_SPLAT_URL.
+const defaultSplatUrl: string = import.meta.env.VITE_SPLAT_URL ?? "/data/romanby-h2-full/splat/splat.ply";
 
 const toV = (p: { x: number; y: number; z: number }) => new THREE.Vector3(p.x, p.y, p.z);
+const touchScreen = window.matchMedia?.("(pointer: coarse)").matches ?? false;
 
 async function main() {
   const app = document.getElementById("app")!;
@@ -64,17 +66,17 @@ async function main() {
       hud.toast(`Photoreal course loaded (${(n / 1000).toFixed(0)}k splats) — V to toggle`);
       document.body.dataset.splat = "loaded";
     } catch (err) {
-      if (!quiet) hud.toast(`Could not load splat: ${err}`);
+      if (quiet) hud.hideToast();
+      else hud.toast(`Could not load splat: ${err}`);
     }
   };
   const splatParam = params.get("splat") ?? course.splat?.url;
   if (splatParam !== "none") {
-    const url = splatParam ?? defaultSplatUrl;
-    fetch(url, { method: "HEAD" })
-      .then((r) => {
-        if (r.ok) void loadSplat({ url }, true);
-      })
-      .catch(() => undefined);
+    // Load directly; if the file is missing the hole simply plays on the stylized terrain.
+    hud.toast("Loading photoreal course…", 60000);
+    splatSourceFromUrl(splatParam ?? defaultSplatUrl)
+      .then((src) => loadSplat(src, true))
+      .catch(() => hud.hideToast());
   }
   const picker = document.createElement("input");
   picker.type = "file";
@@ -139,31 +141,61 @@ async function main() {
     director.follow();
   }
 
-  const keys = new Set<string>();
-  window.addEventListener("keydown", (e) => {
-    keys.add(e.key);
-    if (e.key === " ") {
+  // Actions shared by the keyboard and the on-screen buttons.
+  const canAdjust = () => session.phase === "address" && director.mode !== "flyover";
+  const aimHeld = { left: false, right: false, fast: false };
+  const actions = {
+    skip() {
       if (director.mode === "flyover") {
         director.mode = "address";
         frameAddress(true);
       } else if (session.phase === "flight") {
         session.finishShot();
       }
-    }
-    if (session.phase === "address" && director.mode !== "flyover") {
-      if (e.key === "ArrowUp" || e.key === "w") session.selectClub(-1);
-      if (e.key === "ArrowDown" || e.key === "s") session.selectClub(1);
-      if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "w" || e.key === "s") frameAddress();
-      if (e.key === "o") {
-        if (director.mode === "overhead") frameAddress();
-        else director.overhead(toV(session.aimPoint()));
-      }
-    }
-    if (e.key === "v") setView(view === "splat" ? "stylized" : "splat");
-    if (e.key === "l") picker.click();
-    if (e.key === "r") startHole(false);
+    },
+    club(delta: number) {
+      if (!canAdjust()) return;
+      session.selectClub(delta);
+      frameAddress();
+    },
+    overhead() {
+      if (!canAdjust()) return;
+      if (director.mode === "overhead") frameAddress();
+      else director.overhead(toV(session.aimPoint()));
+    },
+    toggleView() {
+      setView(view === "splat" ? "stylized" : "splat");
+    },
+    loadSplat() {
+      picker.click();
+    },
+    restart() {
+      startHole(false);
+    },
+    aim(dir: -1 | 0 | 1) {
+      aimHeld.left = dir < 0;
+      aimHeld.right = dir > 0;
+    },
+  };
+  hud.bindControls(actions);
+
+  window.addEventListener("keydown", (e) => {
+    aimHeld.fast = e.shiftKey;
+    if (e.key === "ArrowLeft" || e.key === "a") aimHeld.left = true;
+    if (e.key === "ArrowRight" || e.key === "d") aimHeld.right = true;
+    if (e.key === " ") actions.skip();
+    if (e.key === "ArrowUp" || e.key === "w") actions.club(-1);
+    if (e.key === "ArrowDown" || e.key === "s") actions.club(1);
+    if (e.key === "o") actions.overhead();
+    if (e.key === "v") actions.toggleView();
+    if (e.key === "l") actions.loadSplat();
+    if (e.key === "r") actions.restart();
   });
-  window.addEventListener("keyup", (e) => keys.delete(e.key));
+  window.addEventListener("keyup", (e) => {
+    aimHeld.fast = e.shiftKey;
+    if (e.key === "ArrowLeft" || e.key === "a") aimHeld.left = false;
+    if (e.key === "ArrowRight" || e.key === "d") aimHeld.right = false;
+  });
 
   // --- loop --------------------------------------------------------------------------
   const timer = new THREE.Timer();
@@ -171,11 +203,10 @@ async function main() {
     timer.update(time);
     const dt = Math.min(timer.getDelta(), 0.1);
 
-    if (session.phase === "address" && director.mode !== "flyover") {
-      const turn = (keys.has("Shift") ? 1.2 : 0.35) * dt;
-      if (keys.has("ArrowLeft") || keys.has("a")) session.aimHeading -= turn;
-      if (keys.has("ArrowRight") || keys.has("d")) session.aimHeading += turn;
-      if ((keys.has("ArrowLeft") || keys.has("ArrowRight") || keys.has("a") || keys.has("d")) && director.mode !== "overhead") frameAddress();
+    if (canAdjust() && (aimHeld.left || aimHeld.right)) {
+      const turn = (aimHeld.fast ? 1.2 : 0.35) * dt;
+      session.aimHeading += aimHeld.left ? -turn : turn;
+      if (director.mode !== "overhead") frameAddress();
     }
 
     const cameToRest = session.update(dt);
@@ -188,7 +219,7 @@ async function main() {
     if (cameToRest) {
       const r = session.lastResult!;
       if (session.phase === "holed") {
-        hud.toast(`${hud.scoreName(session.strokes, session.hole.par)}! ${session.strokes} strokes — press R to replay`, 8000);
+        hud.toast(`${hud.scoreName(session.strokes, session.hole.par)}! ${session.strokes} strokes — press R or ↺ to replay`, 8000);
         document.body.dataset.holed = "true";
       } else {
         hud.toast(hud.shotSummary(r));
@@ -215,7 +246,9 @@ async function main() {
       hud.setHelp(
         session.phase === "flight"
           ? "Space: skip"
-          : "Drag mouse DOWN then push UP to swing · ←/→ aim · ↑/↓ club · O overhead · V splat/stylized · L load splat · R restart",
+          : touchScreen
+            ? "Swing: drag down, then push up"
+            : "Swing: drag down, then push up · ←/→ aim · ↑/↓ club · O overhead · V photo/stylized · L load splat · R restart",
       );
     }
     director.update(dt, ballPos, toV(session.ball?.vel ?? v3()));

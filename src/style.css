@@ -1,0 +1,46 @@
+:root {
+  --panel: rgb(10 22 40 / 0.78);
+  --panel-edge: rgb(255 255 255 / 0.18);
+  --accent: #ffd23f;
+  --text: #f4f7fb;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc4e8; color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+#app canvas { display: block; touch-action: none; cursor: crosshair; }
+.hud { position: fixed; inset: 0; pointer-events: none; }
+.panel { position: absolute; background: var(--panel); border: 1px solid var(--panel-edge);
+  border-radius: 6px; padding: 8px 12px; box-shadow: 0 4px 18px rgb(0 0 0 / 0.25); }
+.hole-card { top: 16px; left: 16px; display: grid; grid-template-columns: auto auto; gap: 2px 12px; align-items: center; }
+.hole-no { grid-row: span 2; font-size: 38px; font-weight: 800; color: var(--accent); line-height: 1; }
+.hole-meta { display: flex; flex-direction: column; font-size: 13px; }
+.hole-meta span:first-child { font-weight: 700; font-size: 15px; }
+.stroke { grid-column: 1 / -1; font-size: 13px; border-top: 1px solid var(--panel-edge); padding-top: 4px; }
+.wind { top: 16px; right: 16px; text-align: center; min-width: 76px; font-size: 13px; }
+.wind .arrow { font-size: 24px; color: var(--accent); transition: transform 0.2s; }
+.shot-info { bottom: 16px; left: 16px; min-width: 190px; }
+.shot-info .club { font-size: 20px; font-weight: 700; }
+.shot-info .carry, .shot-info .lie { font-size: 13px; opacity: 0.9; }
+.to-pin { bottom: 16px; left: 50%; transform: translateX(-50%); text-align: center; }
+.to-pin .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
+.to-pin .big { font-size: 26px; font-weight: 800; }
+.view { top: 92px; right: 16px; font-size: 12px; }
+.meter { position: absolute; right: 28px; top: 50%; width: 18px; height: 240px; transform: translateY(-50%);
+  border: 2px solid rgb(255 255 255 / 0.8); border-radius: 9px; overflow: hidden; opacity: 0; transition: opacity 0.15s;
+  background: rgb(0 0 0 / 0.35); }
+.meter.active { opacity: 1; }
+.meter .fill { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(#ffe066, #5ed16a); }
+.meter .fill.over { background: linear-gradient(#ff5a4e, #ffb340); }
+.meter .full-line { position: absolute; left: 0; right: 0; bottom: calc(100% / 1.1); border-top: 2px dashed #fff; }
+.toast { position: absolute; top: 22%; left: 50%; transform: translate(-50%, -10px); padding: 10px 22px;
+  background: var(--panel); border-radius: 30px; font-size: 18px; font-weight: 600; opacity: 0;
+  transition: opacity 0.25s, transform 0.25s; white-space: nowrap; max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.help { position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%); font-size: 12px;
+  text-shadow: 0 1px 3px #000; opacity: 0.9; text-align: center; width: calc(100vw - 32px); }
+@media (max-width: 640px) {
+  .hole-no { font-size: 28px; }
+  .shot-info { min-width: 0; bottom: 84px; }
+  .to-pin { bottom: 16px; }
+  .help { bottom: 150px; }
+}

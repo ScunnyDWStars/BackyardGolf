@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Splat Preview</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #b9c6d2; overflow: hidden; font-family: system-ui, sans-serif; }
+      #hud { position: fixed; left: 12px; top: 12px; padding: 8px 12px; border-radius: 8px;
+             background: rgb(0 0 0 / 0.55); color: #fff; font-size: 13px; line-height: 1.5; }
+      #hud label { display: block; }
+      #hud input[type=file] { margin-top: 6px; color: #ddd; }
+    </style>
+  </head>
+  <body>
+    <div id="hud">
+      <strong>Splat preview</strong>
+      <div id="status">loading…</div>
+      <div>Views: 1 tee · 2 mid · 3 green · 4 overhead · drag to orbit</div>
+      <label>Open .ply / .spz <input id="file" type="file" accept=".ply,.spz,.splat,.ksplat" /></label>
+    </div>
+    <script type="module" src="./preview.ts"></script>
+  </body>
+</html>

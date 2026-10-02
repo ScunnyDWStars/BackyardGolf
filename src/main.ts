@@ -1,0 +1,241 @@
+import * as THREE from "three";
+import "./style.css";
+import type { CourseData } from "./course/types";
+import { HoleSession } from "./game/session";
+import { v3 } from "./math/vec3";
+import { CameraDirector } from "./render/cameraDirector";
+import { createScene } from "./render/scene";
+import { SplatLayer, type SplatSource, matrixFromRows } from "./render/splatLayer";
+import { AimMarker, buildBall, buildPin, buildPuttingGrid, buildStylizedTerrain } from "./render/stylizedTerrain";
+import { AnalogSwing, defaultSwingConfig } from "./swing/analogSwing";
+import { Hud } from "./ui/hud";
+
+type ViewMode = "stylized" | "splat";
+
+const params = new URLSearchParams(location.search);
+const courseUrl = params.get("course") ?? "courses/romanby-h2.json";
+// The trained splat is not shipped in the repo; in dev it is served from the local data/ dir.
+const defaultSplatUrl = "/data/romanby-h2/splat/splat.ply";
+
+const toV = (p: { x: number; y: number; z: number }) => new THREE.Vector3(p.x, p.y, p.z);
+
+async function main() {
+  const app = document.getElementById("app")!;
+  const course: CourseData = await (await fetch(courseUrl)).json();
+  const { renderer, scene, camera, sun } = createScene(app);
+  const hud = new Hud(app);
+
+  // Light, seeded-by-param wind so tests can force calm conditions.
+  const windMph = Number(params.get("wind") ?? 6);
+  const windDir = Number(params.get("windDir") ?? 200) * (Math.PI / 180);
+  const wind = v3(Math.sin(windDir) * windMph * 0.447, 0, -Math.cos(windDir) * windMph * 0.447);
+  let session = new HoleSession(course, 0, wind);
+
+  const terrainGroup = buildStylizedTerrain(course, session.terrain);
+  scene.add(terrainGroup);
+  const pin = buildPin(toV(session.hole.pin));
+  scene.add(pin);
+  const ball = buildBall();
+  scene.add(ball);
+  const aim = new AimMarker();
+  scene.add(aim.group);
+  const grid = buildPuttingGrid(session.terrain, toV(session.hole.pin));
+  grid.visible = false;
+  scene.add(grid);
+  const trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }));
+  scene.add(trail);
+  const trailPts: THREE.Vector3[] = [];
+
+  const splat = new SplatLayer(matrixFromRows(course.splat?.matrix ?? [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]));
+  scene.add(splat.group);
+  let view: ViewMode = "stylized";
+  const setView = (v: ViewMode) => {
+    view = v === "splat" && !splat.loaded ? "stylized" : v;
+    terrainGroup.visible = view === "stylized";
+    splat.group.visible = view === "splat";
+    scene.fog = view === "splat" ? null : new THREE.Fog(0xcfe0ec, 250, 900);
+  };
+  const loadSplat = async (src: SplatSource, quiet = false) => {
+    try {
+      const n = await splat.load(src);
+      setView("splat");
+      hud.toast(`Photoreal course loaded (${(n / 1000).toFixed(0)}k splats) — V to toggle`);
+      document.body.dataset.splat = "loaded";
+    } catch (err) {
+      if (!quiet) hud.toast(`Could not load splat: ${err}`);
+    }
+  };
+  const splatParam = params.get("splat") ?? course.splat?.url;
+  if (splatParam !== "none") {
+    const url = splatParam ?? defaultSplatUrl;
+    fetch(url, { method: "HEAD" })
+      .then((r) => {
+        if (r.ok) void loadSplat({ url }, true);
+      })
+      .catch(() => undefined);
+  }
+  const picker = document.createElement("input");
+  picker.type = "file";
+  picker.accept = ".ply,.spz,.splat,.ksplat,.sog";
+  picker.addEventListener("change", async () => {
+    const f = picker.files?.[0];
+    if (f) await loadSplat({ fileBytes: await f.arrayBuffer(), fileName: f.name });
+  });
+
+  const director = new CameraDirector(camera, session.terrain);
+  const swing = new AnalogSwing(defaultSwingConfig(window.innerHeight));
+  window.addEventListener("resize", () => swing.setConfig(defaultSwingConfig(window.innerHeight)));
+
+  let restTimer = 0;
+  const putting = () => session.club.isPutter === true;
+  const frameAddress = (snap = false) => director.frameAddress(toV(session.ballPos), session.aimHeading, putting(), snap);
+
+  const startHole = (flyover: boolean) => {
+    session = new HoleSession(course, 0, wind);
+    trailPts.length = 0;
+    trail.geometry.setFromPoints([]);
+    if (flyover && params.get("flyover") !== "0") {
+      director.startFlyover(session.hole.centerline, toV(session.hole.pin));
+      hud.setHelp("Hole flyover — click or press Space to skip");
+    } else {
+      frameAddress(true);
+    }
+  };
+  director.onFlyoverDone = () => frameAddress(true);
+  startHole(true);
+
+  // --- input -------------------------------------------------------------------------
+  const canSwing = () => session.phase === "address" && director.mode !== "flyover";
+  renderer.domElement.addEventListener("pointerdown", (e) => {
+    if (director.mode === "flyover") {
+      director.mode = "address";
+      frameAddress(true);
+      return;
+    }
+    if (!canSwing()) return;
+    renderer.domElement.setPointerCapture(e.pointerId);
+    swing.begin({ t: e.timeStamp / 1000, x: e.clientX, y: e.clientY });
+  });
+  renderer.domElement.addEventListener("pointermove", (e) => {
+    if (swing.phase === "backswing" || swing.phase === "downswing") {
+      swing.move({ t: e.timeStamp / 1000, x: e.clientX, y: e.clientY });
+      if (swing.isDone()) takeShot();
+    }
+  });
+  renderer.domElement.addEventListener("pointerup", (e) => {
+    swing.end({ t: e.timeStamp / 1000, x: e.clientX, y: e.clientY });
+    if (swing.isDone()) takeShot();
+    hud.setMeter(null);
+  });
+
+  function takeShot() {
+    const result = swing.result!;
+    swing.phase = "idle";
+    hud.setMeter(null);
+    session.hit(result);
+    trailPts.length = 0;
+    director.follow();
+  }
+
+  const keys = new Set<string>();
+  window.addEventListener("keydown", (e) => {
+    keys.add(e.key);
+    if (e.key === " ") {
+      if (director.mode === "flyover") {
+        director.mode = "address";
+        frameAddress(true);
+      } else if (session.phase === "flight") {
+        session.finishShot();
+      }
+    }
+    if (session.phase === "address" && director.mode !== "flyover") {
+      if (e.key === "ArrowUp" || e.key === "w") session.selectClub(-1);
+      if (e.key === "ArrowDown" || e.key === "s") session.selectClub(1);
+      if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "w" || e.key === "s") frameAddress();
+      if (e.key === "o") {
+        if (director.mode === "overhead") frameAddress();
+        else director.overhead(toV(session.aimPoint()));
+      }
+    }
+    if (e.key === "v") setView(view === "splat" ? "stylized" : "splat");
+    if (e.key === "l") picker.click();
+    if (e.key === "r") startHole(false);
+  });
+  window.addEventListener("keyup", (e) => keys.delete(e.key));
+
+  // --- loop --------------------------------------------------------------------------
+  const clock = new THREE.Clock();
+  renderer.setAnimationLoop(() => {
+    const dt = Math.min(clock.getDelta(), 0.1);
+
+    if (session.phase === "address" && director.mode !== "flyover") {
+      const turn = (keys.has("Shift") ? 1.2 : 0.35) * dt;
+      if (keys.has("ArrowLeft") || keys.has("a")) session.aimHeading -= turn;
+      if (keys.has("ArrowRight") || keys.has("d")) session.aimHeading += turn;
+      if ((keys.has("ArrowLeft") || keys.has("ArrowRight") || keys.has("a") || keys.has("d")) && director.mode !== "overhead") frameAddress();
+    }
+
+    const cameToRest = session.update(dt);
+    const ballPos = toV(session.ball?.pos ?? session.ballPos);
+    ball.position.copy(ballPos).add(new THREE.Vector3(0, 0.04, 0));
+    if (session.phase === "flight") {
+      trailPts.push(ballPos.clone());
+      if (trailPts.length % 2 === 0) trail.geometry.setFromPoints(trailPts);
+    }
+    if (cameToRest) {
+      const r = session.lastResult!;
+      if (session.phase === "holed") {
+        hud.toast(`${hud.scoreName(session.strokes, session.hole.par)}! ${session.strokes} strokes — press R to replay`, 8000);
+        document.body.dataset.holed = "true";
+      } else {
+        hud.toast(hud.shotSummary(r));
+      }
+      restTimer = 1.4;
+    }
+    if (restTimer > 0) {
+      restTimer -= dt;
+      if (restTimer <= 0 && session.phase === "address") frameAddress();
+    }
+
+    const showAim = session.phase === "address" && director.mode !== "flyover" && swing.phase !== "downswing";
+    aim.group.visible = showAim;
+    if (showAim) {
+      const power = swing.phase === "backswing" ? Math.max(0.05, swing.currentPower) : 1;
+      const to = toV(session.aimPoint(power));
+      const apex = putting() ? 0 : Math.min(30, ballPos.distanceTo(to) * 0.12);
+      aim.update(ballPos, to, apex, putting() ? 0.25 : 1 + ballPos.distanceTo(to) / 150);
+    }
+    grid.visible = session.lie === "green" && session.phase !== "holed";
+    if (swing.phase === "backswing" || swing.phase === "downswing") hud.setMeter(swing.currentPower);
+
+    if (director.mode !== "flyover") {
+      hud.setHelp(
+        session.phase === "flight"
+          ? "Space: skip"
+          : "Drag mouse DOWN then push UP to swing · ←/→ aim · ↑/↓ club · O overhead · V splat/stylized · L load splat · R restart",
+      );
+    }
+    director.update(dt, ballPos, toV(session.ball?.vel ?? v3()));
+    sun.position.copy(ballPos).add(new THREE.Vector3(-120, 200, 80));
+    sun.target.position.copy(ballPos);
+    hud.update(session, course.name, view === "splat" ? "Photoreal (splat)" : "Stylized");
+    renderer.render(scene, camera);
+  });
+
+  // Hooks for automated play-testing.
+  (window as unknown as { __game: unknown }).__game = {
+    get session() {
+      return session;
+    },
+    get view() {
+      return view;
+    },
+    director,
+  };
+  document.body.dataset.ready = "true";
+}
+
+main().catch((err) => {
+  document.body.textContent = `Failed to start: ${err}`;
+  console.error(err);
+});

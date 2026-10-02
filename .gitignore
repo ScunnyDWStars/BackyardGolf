@@ -1,0 +1,11 @@
+# Source footage, frames, reconstructions and trained splats stay out of git:
+# they are derived from third-party video and need the rights holder's permission to publish.
+data/
+*.ply
+*.spz
+*.splat
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.cache/

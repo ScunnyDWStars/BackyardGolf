@@ -330,7 +330,7 @@ function blobCanopy(): THREE.BufferGeometry {
     [-0.18, 0.42, 0.55, 0.62],
   ];
   const parts = blobs.map(([x, y, z, r]) => {
-    const g = new THREE.IcosahedronGeometry(r, 2);
+    const g = new THREE.IcosahedronGeometry(r, 1);
     g.translate(x, y, z);
     return g;
   });
@@ -465,8 +465,9 @@ function buildTrees(course: CourseData, terrain: TerrainModel, sunDir: THREE.Vec
   for (const kind of kinds) {
     const mine = spots.map((s, idx) => ({ s, idx })).filter(({ s }) => s.kind === kind);
     if (!mine.length) continue;
+    // Trees use soft blob shadows; casting real shadow-map shadows from thousands of
+    // instances would double the triangle count for little visual gain.
     const canopies = new THREE.InstancedMesh(geos[kind], canopyMat, mine.length);
-    canopies.castShadow = true;
     mine.forEach(({ s, idx }, i) => {
       const y = terrain.heightAt(s.x, s.z);
       const scale = kind === "bush" ? 1.2 + rnd() * 0.8 : 3 + rnd() * 2.2;
@@ -505,7 +506,7 @@ function buildTeeMarkers(course: CourseData, terrain: TerrainModel): THREE.Group
   const g = new THREE.Group();
   g.name = "tee-markers";
   // Small coloured blocks, so they never read as golf balls.
-  const geo = new THREE.BoxGeometry(0.22, 0.16, 0.22);
+  const geo = new THREE.BoxGeometry(0.16, 0.12, 0.16);
   const mat = new THREE.MeshLambertMaterial({ color: 0xc8302b });
   for (const hole of course.holes) {
     const [ax, az] = [hole.tee.x, hole.tee.z];
@@ -513,8 +514,8 @@ function buildTeeMarkers(course: CourseData, terrain: TerrainModel): THREE.Group
     const L = Math.hypot(next[0] - ax, next[1] - az) || 1;
     const [dx, dz] = [(next[0] - ax) / L, (next[1] - az) / L];
     for (const side of [-1, 1]) {
-      const x = ax - dz * side * 4 + dx * 2;
-      const z = az + dx * side * 4 + dz * 2;
+      const x = ax - dz * side * 3.5 + dx * 4;
+      const z = az + dx * side * 3.5 + dz * 4;
       const mk = new THREE.Mesh(geo, mat);
       mk.position.set(x, terrain.heightAt(x, z) + 0.08, z);
       g.add(mk);

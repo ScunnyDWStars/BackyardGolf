@@ -4,8 +4,11 @@ A browser golf game in the spirit of *Tiger Woods PGA Tour 08*: analog mouse swi
 cameras and HUD, aim arc, putting grid. It is played on **real courses**, reconstructed as
 3D Gaussian splats from flyover video.
 
-The first playable hole is **Romanby Golf & Country Club, hole 2** (par 4, 382 yd). It was
-reconstructed from a drone flyover video with the CPU splat pipeline in `pipeline/`.
+The default course is **Romanby Golf Club**, all 18 holes, baked from OpenStreetMap and
+public elevation data in a stylized look. **Hole 2** can also be played photoreal: it was
+reconstructed from a drone flyover video with the CPU splat pipeline in `pipeline/`, then
+placed into the map course using the map's tee and green. Course data licences are listed
+in `public/courses/README.md`.
 
 ## Play
 

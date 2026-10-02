@@ -13,7 +13,7 @@ import { Hud } from "./ui/hud";
 type ViewMode = "stylized" | "splat";
 
 const params = new URLSearchParams(location.search);
-const courseUrl = params.get("course") ?? "courses/romanby-h2.json";
+const courseUrl = params.get("course") ?? "courses/romanby.json";
 // The trained splat is not in the repo (it is derived from third-party footage). Dev serves it
 // from the local data/ dir; a private build bundles it by setting VITE_SPLAT_URL.
 const defaultSplatUrl: string = import.meta.env.VITE_SPLAT_URL ?? "/data/romanby-h2-full/splat/splat.ply";
@@ -24,8 +24,9 @@ const touchScreen = window.matchMedia?.("(pointer: coarse)").matches ?? false;
 async function main() {
   const app = document.getElementById("app")!;
   const course: CourseData = await (await fetch(courseUrl)).json();
-  const { renderer, scene, camera, sun } = createScene(app);
+  const { renderer, scene, camera, sun, spark } = createScene(app);
   const hud = new Hud(app);
+  hud.setCredits(course.attribution);
 
   // Light, seeded-by-param wind so tests can force calm conditions.
   const windMph = Number(params.get("wind") ?? 6);
@@ -82,6 +83,8 @@ async function main() {
     view = v === "splat" && (!splat.loaded || !splatCovers()) ? "stylized" : v;
     terrainGroup.visible = view === "stylized";
     splat.group.visible = view === "splat";
+    // Spark keeps its last splat draw while the camera is still; make it redraw now.
+    spark.setDirty();
     scene.fog = view === "splat" ? null : new THREE.Fog(0xcfe0ec, 250, 900);
     director.splatFraming = view === "splat";
     hud.setViewState(view, viewState());

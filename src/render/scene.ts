@@ -40,7 +40,8 @@ export function createScene(container: HTMLElement) {
   scene.add(sun, sun.target);
 
   // Spark composites Gaussian splats with ordinary meshes in the same scene.
-  scene.add(new SparkRenderer({ renderer }));
+  const spark = new SparkRenderer({ renderer });
+  scene.add(spark);
 
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.05, 3000);
   window.addEventListener("resize", () => {
@@ -48,5 +49,5 @@ export function createScene(container: HTMLElement) {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
-  return { renderer, scene, camera, sun };
+  return { renderer, scene, camera, sun, spark };
 }

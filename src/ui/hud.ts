@@ -36,6 +36,7 @@ export class Hud {
       <div class="panel to-pin"><div class="label">To pin</div><div class="big" data-k="toPin"></div></div>
       <div class="meter"><div class="fill" data-k="meterFill"></div><div class="full-line"></div></div>
       <div class="toast" data-k="toast"></div>
+      <div class="credits"><span class="full" data-k="credits"></span><span class="short" data-k="creditsShort"></span></div>
       <div class="help" data-k="help"></div>
       <div class="view-switch" role="group" aria-label="Course look">
         <button type="button" data-view="splat" aria-pressed="false">Photoreal</button>
@@ -232,6 +233,12 @@ export class Hud {
       }),
     );
     this.els.scorecard.hidden = false;
+  }
+
+  /** Data credits (OpenStreetMap's licence requires them to be visible). */
+  setCredits(lines: string[]) {
+    this.set("credits", lines.join(" · "));
+    this.set("creditsShort", lines.some((l) => l.includes("OpenStreetMap")) ? "© OpenStreetMap contributors" : (lines[0] ?? ""));
   }
 
   hideToast() {

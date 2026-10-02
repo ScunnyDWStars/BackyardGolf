@@ -1,9 +1,10 @@
-// Headless play-test: loads the game, plays every hole of the round with scripted mouse
-// swings, checks the scorecard flow, and saves screenshots. Usage: node scripts/playtest.mjs <baseUrl> <outDir> [query]
+// Headless play-test: loads the game, plays the round's holes with scripted mouse swings,
+// checks the scorecard flow, and saves screenshots.
+// Usage: node scripts/playtest.mjs <baseUrl> <outDir> [query] [maxHoles]
 import { mkdirSync } from "node:fs";
 import { chromium } from "playwright-core";
 
-const [base = "http://localhost:5173/", out = "playtest-out", query = "wind=0&flyover=0"] = process.argv.slice(2);
+const [base = "http://localhost:5173/", out = "playtest-out", query = "wind=0&flyover=0", maxHoles = "99"] = process.argv.slice(2);
 mkdirSync(out, { recursive: true });
 
 const browser = await chromium.launch({
@@ -42,7 +43,7 @@ async function swing(power, driftPx = 0) {
 }
 
 // Play every hole of the round: hole out, wait for the scorecard, take its primary action.
-const holeCount = await page.evaluate(() => window.__game.round.course.holes.length);
+const holeCount = Math.min(Number(maxHoles), await page.evaluate(() => window.__game.round.course.holes.length));
 let shot = 0;
 for (let hole = 0; hole < holeCount; hole++) {
   for (let n = 0; n < 12; n++, shot++) {
@@ -52,6 +53,9 @@ for (let hole = 0; hole < holeCount; hole++) {
     await swing(power);
     await page.waitForTimeout(shot === 0 ? 1800 : 600);
     if (shot === 0) await page.screenshot({ path: `${out}/02-flight.png` });
+    // Skip the rest of the flight (the game's Space / ⏭ action) so slow software rendering
+    // doesn't stretch each shot into minutes.
+    await page.keyboard.press(" ");
     await page.waitForFunction(() => window.__game.session.phase !== "flight", null, { timeout: 90_000 });
     await page.waitForTimeout(1800);
     const after = await state();
@@ -74,4 +78,5 @@ console.log("final", JSON.stringify(final));
 console.log("errors", JSON.stringify(errors));
 await browser.close();
 const realErrors = errors.filter((e) => !e.includes("ERR_CERT")); // sandbox blocks Google Fonts
-process.exit(final.phase === "holed" && final.scores.every((x) => x !== null) && realErrors.length === 0 ? 0 : 1);
+const scored = final.scores.filter((x) => x !== null).length;
+process.exit(final.phase === "holed" && scored >= holeCount && realErrors.length === 0 ? 0 : 1);

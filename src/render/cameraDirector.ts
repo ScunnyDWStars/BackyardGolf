@@ -12,6 +12,9 @@ export class CameraDirector {
   private readonly desiredPos = new THREE.Vector3();
   private readonly desiredLook = new THREE.Vector3();
   onFlyoverDone: (() => void) | null = null;
+  /** Splats only look right near the capture path (a drone ~2.5 m up), so the photoreal
+   * view frames shots from higher and further back than the stylized one. */
+  splatFraming = false;
 
   constructor(
     readonly camera: THREE.PerspectiveCamera,
@@ -33,8 +36,8 @@ export class CameraDirector {
   /** Snap the camera behind the ball looking along the aim line. */
   frameAddress(ball: THREE.Vector3, heading: number, putting: boolean, snap = false) {
     this.mode = putting ? "putt" : "address";
-    const back = putting ? 2.6 : 4.2;
-    const up = putting ? 1.1 : 1.7;
+    const back = putting ? (this.splatFraming ? 5 : 2.6) : this.splatFraming ? 6.5 : 4.2;
+    const up = putting ? (this.splatFraming ? 2.6 : 1.1) : this.splatFraming ? 2.8 : 1.7;
     const dir = new THREE.Vector3(Math.sin(heading), 0, -Math.cos(heading));
     this.desiredPos.copy(ball).addScaledVector(dir, -back);
     this.desiredPos.y = Math.max(this.desiredPos.y, this.ground(this.desiredPos.x, this.desiredPos.z)) + up;

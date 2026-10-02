@@ -54,6 +54,8 @@ async function main() {
     terrainGroup.visible = view === "stylized";
     splat.group.visible = view === "splat";
     scene.fog = view === "splat" ? null : new THREE.Fog(0xcfe0ec, 250, 900);
+    director.splatFraming = view === "splat";
+    if (session.phase === "address" && director.mode !== "flyover" && director.mode !== "overhead") frameAddress(true);
   };
   const loadSplat = async (src: SplatSource, quiet = false) => {
     try {

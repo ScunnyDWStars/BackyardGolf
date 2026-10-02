@@ -36,8 +36,8 @@
   "par": 4,
   "lengthYards": 382,
   "tee": [
-   0,
-   0
+   2,
+   -8
   ],
   "pin": [
    1.2,
@@ -45,8 +45,8 @@
   ],
   "centerline": [
    [
-    0,
-    0
+    2,
+    -8
    ],
    [
     8,
@@ -94,20 +94,20 @@
     "lie": "tee",
     "polygon": [
      [
-      -5,
-      4
+      -3,
+      -3
      ],
      [
-      5,
-      4
+      7,
+      -3
      ],
      [
-      5,
-      -4
+      7,
+      -13
      ],
      [
-      -5,
-      -4
+      -3,
+      -13
      ]
     ]
    },
@@ -644,5 +644,5 @@
    }
   ]
  },
- "measurement_notes": "Green, pin and pond positions were measured by casting rays from the COLMAP camera poses (source times 38, 44, 50, 55 and 59 s) onto the fitted ground plane; expect a few metres of error at the drone's grazing view angles. Fairway follows the drone track; the tee is the drone's position at the start of the flyover."
+ "measurement_notes": "Green, pin and pond positions were measured by casting rays from the COLMAP camera poses (source times 38, 44, 50, 55 and 59 s) onto the fitted ground plane; expect a few metres of error at the drone's grazing view angles. Fairway follows the drone track; the tee is the drone's position at the start of the flyover. The tee sits 8 m in front of the drone's first frame so the address camera stays inside the captured volume; tee to pin is then ~381 yd vs 382 on the card."
 }

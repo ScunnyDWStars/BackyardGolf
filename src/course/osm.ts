@@ -231,8 +231,73 @@ export function bakeHoleFromOsm(
   return bakeCourseFromOsm(elements, heightAt, { ...opts, holes: [opts.hole] });
 }
 
+function distToRing(x: number, z: number, poly: Polygon2): number {
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const [ax, az] = poly[i];
+    const [bx, bz] = poly[(i + 1) % poly.length];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+    best = Math.min(best, Math.hypot(x - ax - t * dx, z - az - t * dz));
+  }
+  return best;
+}
+
+/**
+ * Putting surfaces must hold a ball: at a stimp-10 pace anything steeper than ~5% sends it
+ * back down. Replace each green (plus a margin) with the best-fit plane of the DEM, tilted
+ * at most `maxSlope`, and blend it into the surrounding ground.
+ */
+function flattenGreens(h: Float64Array, cols: number, rows: number, x0: number, z0: number, cell: number, areas: Area[], maxSlope = 0.025, margin = 6, blend = 12) {
+  for (const area of areas) {
+    if (area.lie !== "green") continue;
+    const xs = area.polygon.map((p) => p[0]);
+    const zs = area.polygon.map((p) => p[1]);
+    const pad = margin + blend;
+    const c0 = Math.max(0, Math.floor((Math.min(...xs) - pad - x0) / cell));
+    const c1 = Math.min(cols - 1, Math.ceil((Math.max(...xs) + pad - x0) / cell));
+    const r0 = Math.max(0, Math.floor((Math.min(...zs) - pad - z0) / cell));
+    const r1 = Math.min(rows - 1, Math.ceil((Math.max(...zs) + pad - z0) / cell));
+    const cells: { i: number; x: number; z: number; d: number }[] = [];
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const x = x0 + c * cell;
+        const z = z0 + r * cell;
+        const d = pointInPolygon(x, z, area.polygon) ? 0 : distToRing(x, z, area.polygon);
+        if (d <= pad) cells.push({ i: r * cols + c, x, z, d });
+      }
+    }
+    const fit = cells.filter((q) => q.d <= margin);
+    if (fit.length < 3) continue;
+    // Least-squares plane h = a x + b z + k around the green centre.
+    const mx = fit.reduce((s, q) => s + q.x, 0) / fit.length;
+    const mz = fit.reduce((s, q) => s + q.z, 0) / fit.length;
+    const mh = fit.reduce((s, q) => s + h[q.i], 0) / fit.length;
+    let sxx = 0, szz = 0, sxz = 0, sxh = 0, szh = 0;
+    for (const q of fit) {
+      const dx = q.x - mx, dz = q.z - mz, dh = h[q.i] - mh;
+      sxx += dx * dx; szz += dz * dz; sxz += dx * dz; sxh += dx * dh; szh += dz * dh;
+    }
+    const det = sxx * szz - sxz * sxz || 1;
+    let a = (sxh * szz - szh * sxz) / det;
+    let b = (szh * sxx - sxh * sxz) / det;
+    const g = Math.hypot(a, b);
+    if (g > maxSlope) {
+      a *= maxSlope / g;
+      b *= maxSlope / g;
+    }
+    for (const q of cells) {
+      const plane = mh + a * (q.x - mx) + b * (q.z - mz);
+      const w = Math.max(0, Math.min(1, 1 - (q.d - margin) / blend));
+      h[q.i] = w * plane + (1 - w) * h[q.i];
+    }
+  }
+}
+
 /** Course shaping on the DEM: dig bunkers, sink water below its banks, level tee boxes. */
 function shapeGround(h: Float64Array, cols: number, rows: number, x0: number, z0: number, cell: number, areas: Area[]) {
+  flattenGreens(h, cols, rows, x0, z0, cell, areas);
   for (const area of areas) {
     if (area.lie !== "bunker" && area.lie !== "water" && area.lie !== "tee") continue;
     const xs = area.polygon.map((p) => p[0]);

@@ -27,16 +27,17 @@ interface Surface {
   restitution: number; // normal bounce coefficient
   grip: number; // 0..1: how fully friction converts slip into rolling on impact
   rollDecel: number; // rolling resistance, m/s^2 (green 0.55 ~ stimp 10)
+  soft: number; // 0..1: share of forward speed the turf absorbs on a vertical landing
 }
 
 export const SURFACES: Record<Lie, Surface> = {
-  tee: { restitution: 0.35, grip: 0.6, rollDecel: 2.4 },
-  fairway: { restitution: 0.35, grip: 0.6, rollDecel: 2.4 },
-  green: { restitution: 0.25, grip: 0.85, rollDecel: 0.55 },
-  rough: { restitution: 0.2, grip: 0.8, rollDecel: 4.5 },
-  bunker: { restitution: 0.05, grip: 1, rollDecel: 10 },
-  water: { restitution: 0, grip: 1, rollDecel: 100 },
-  "out-of-bounds": { restitution: 0.3, grip: 0.7, rollDecel: 3 },
+  tee: { restitution: 0.35, grip: 0.6, rollDecel: 2.4, soft: 0.45 },
+  fairway: { restitution: 0.35, grip: 0.6, rollDecel: 2.4, soft: 0.45 },
+  green: { restitution: 0.25, grip: 0.85, rollDecel: 0.55, soft: 0.65 },
+  rough: { restitution: 0.2, grip: 0.8, rollDecel: 4.5, soft: 0.75 },
+  bunker: { restitution: 0.05, grip: 1, rollDecel: 10, soft: 0.9 },
+  water: { restitution: 0, grip: 1, rollDecel: 100, soft: 1 },
+  "out-of-bounds": { restitution: 0.3, grip: 0.7, rollDecel: 3, soft: 0.5 },
 };
 
 /** Aerodynamic coefficients from spin factor S = r*omega/v, tuned so full shots match
@@ -131,7 +132,10 @@ function bounce(state: BallState, env: Environment): void {
 
   const surf = SURFACES[lie];
   const vn = dot(state.vel, n);
-  const vt = sub(state.vel, scale(n, vn));
+  // Turf absorbs forward speed in proportion to how steeply the ball comes down, so high
+  // pitches check up on the green while shallow drives keep running.
+  const steepness = Math.abs(vn) / Math.max(length(state.vel), 1e-6);
+  const vt = scale(sub(state.vel, scale(n, vn)), 1 - surf.soft * steepness);
   // Rolling-without-slip target for a solid sphere: v = (5 v_t + 2 r (omega x n)) / 7.
   // Backspin makes (omega x n) point backwards, so high-spin wedges check up.
   const spinTerm = scale(cross(state.spin, n), BALL_RADIUS);

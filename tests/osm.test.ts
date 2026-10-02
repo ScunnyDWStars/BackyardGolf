@@ -84,6 +84,21 @@ describe("whole-course baking", () => {
     expect(t.heightAt(0, -4)).toBeGreaterThan(fairway + 0.2);
   });
 
+  it("greens hold a ball even on steep ground", async () => {
+    const { sampleCourseOsm } = await import("./sampleOsm");
+    const { bakeCourseFromOsm } = await import("../src/course/osm");
+    // Ground tilted 10% towards +x everywhere.
+    const steep = (p: { lat: number; lon: number }) => (p.lon + 1.452) * 111_320 * Math.cos((54.34 * Math.PI) / 180) * 0.1;
+    const course = bakeCourseFromOsm(sampleCourseOsm().elements, steep);
+    const t = new TerrainModel(course, 0);
+    for (const [x, z] of [[62, -352], [55, -345], [70, -360]]) {
+      const n = t.normalAt(x, z);
+      expect(Math.hypot(n.x, n.z) / n.y).toBeLessThan(0.03);
+    }
+    const n = t.normalAt(0, -150); // fairway keeps the real slope
+    expect(Math.hypot(n.x, n.z) / n.y).toBeGreaterThan(0.08);
+  });
+
   it("joins multipolygon members into rings", async () => {
     const { assembleRings } = await import("../src/course/osm");
     const a = { lat: 0, lon: 0 }, b = { lat: 0, lon: 1 }, c = { lat: 1, lon: 1 }, d = { lat: 1, lon: 0 };

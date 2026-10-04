@@ -1,0 +1,22 @@
+{
+ "courses": [
+  {
+   "id": "romanby",
+   "file": "courses/romanby.json",
+   "name": "Romanby Golf Club",
+   "place": "Northallerton, North Yorkshire",
+   "country": "England",
+   "holes": 18,
+   "par": 72,
+   "yards": 6547,
+   "photorealHoles": [
+    2
+   ],
+   "credits": [
+    "Course layout © OpenStreetMap contributors (ODbL)",
+    "Elevation: AWS Terrain Tiles (Mapzen Terrarium)",
+    "Terrain reconstructed from a drone flyover of Romanby Golf & Country Club, hole 2"
+   ]
+  }
+ ]
+}

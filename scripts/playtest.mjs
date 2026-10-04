@@ -27,6 +27,20 @@ const state = () =>
     return { hole: s.hole.number, phase: s.phase, strokes: s.strokes, lie: s.lie, toPin: s.distanceToPin, club: s.club.id, carry: s.carries.get(s.club.id), puttRange: s.puttRange, scores: window.__game.round.scores };
   });
 
+/** 3-click: start, stop at the meter's ⚑ target mark, then stop in the accuracy zone. */
+async function threeClick() {
+  await page.waitForFunction(() => window.__game.meterTarget !== null, null, { timeout: 30_000 });
+  await page.waitForTimeout(400); // let the solver settle on the final aim
+  const target = await page.evaluate(() => window.__game.meterTarget);
+  await page.keyboard.press(" ");
+  // The marker moves in frame-sized steps; stop half a step early on average.
+  await page.waitForFunction((t) => { const m = window.__game.meter; return m.phase !== "rising" || m.marker >= t - 0.02; }, target, { timeout: 120_000, polling: "raf" });
+  await page.keyboard.press(" ");
+  await page.waitForFunction(() => { const m = window.__game.meter; return m.phase !== "returning" || m.marker <= 0.025; }, null, { timeout: 120_000, polling: "raf" });
+  await page.keyboard.press(" ");
+  return target;
+}
+
 async function swing(power, driftPx = 0) {
   const full = Math.max(120, 720 * 0.28);
   const x = 640, y = 300;
@@ -49,8 +63,14 @@ for (let hole = 0; hole < holeCount; hole++) {
   for (let n = 0; n < 12; n++, shot++) {
     const s = await state();
     if (s.phase === "holed") break;
-    const power = s.club === "PT" ? Math.min(1, (s.toPin * 1.08 + 0.3) / s.puttRange) : Math.min(1, s.toPin / ((s.carry ?? 100) + 8));
-    await swing(power);
+    const meterShown = await page.evaluate(() => !document.querySelector(".tc-meter").hidden);
+    let power;
+    if (meterShown) {
+      power = await threeClick();
+    } else {
+      power = Math.min(1, s.toPin / ((s.carry ?? 100) + 8));
+      await swing(power);
+    }
     await page.waitForTimeout(shot === 0 ? 1800 : 600);
     if (shot === 0) await page.screenshot({ path: `${out}/02-flight.png` });
     // Skip the rest of the flight (the game's Space / ⏭ action) so slow software rendering
@@ -59,10 +79,10 @@ for (let hole = 0; hole < holeCount; hole++) {
     await page.waitForFunction(() => window.__game.session.phase !== "flight", null, { timeout: 90_000 });
     await page.waitForTimeout(1800);
     const after = await state();
-    console.log(`hole ${after.hole} shot ${n + 1}: ${s.club} power ${power.toFixed(2)} -> ${after.lie}, ${after.toPin.toFixed(1)} m to pin, strokes ${after.strokes}, ${after.phase}`);
+    console.log(`hole ${after.hole} shot ${n + 1}: ${s.club} ${meterShown ? "3-click" : "analog"} power ${power.toFixed(2)} -> ${after.lie}, ${after.toPin.toFixed(1)} m to pin, strokes ${after.strokes}, ${after.phase}`);
     await page.screenshot({ path: `${out}/03-h${after.hole}-shot${n + 1}.png` });
   }
-  await page.waitForSelector(".scorecard:not([hidden])", { timeout: 20_000 });
+  await page.waitForSelector("[data-k=scorecard]:not([hidden])", { timeout: 20_000 });
   await page.screenshot({ path: `${out}/04-card-h${hole + 1}.png` });
   const label = await page.textContent(".card-actions button.primary");
   console.log(`scorecard after hole ${hole + 1}: "${label}"`);

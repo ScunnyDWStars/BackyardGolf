@@ -24,6 +24,7 @@ export const CLUBS: Club[] = [
   { id: "8I", name: "8 Iron", ballSpeed: 115 * MPH, launchDeg: 18.1, backspinRpm: 7998 },
   { id: "9I", name: "9 Iron", ballSpeed: 109 * MPH, launchDeg: 20.4, backspinRpm: 8647 },
   { id: "PW", name: "Pitching Wedge", ballSpeed: 102 * MPH, launchDeg: 24.2, backspinRpm: 9304 },
+  { id: "GW", name: "Gap Wedge", ballSpeed: 95 * MPH, launchDeg: 27, backspinRpm: 9700 },
   { id: "SW", name: "Sand Wedge", ballSpeed: 88 * MPH, launchDeg: 30, backspinRpm: 10000 },
   { id: "LW", name: "Lob Wedge", ballSpeed: 75 * MPH, launchDeg: 36, backspinRpm: 10000 },
   { id: "PT", name: "Putter", ballSpeed: 9, launchDeg: 0, backspinRpm: 0, isPutter: true },

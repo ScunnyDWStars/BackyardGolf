@@ -35,7 +35,24 @@ export class Hud {
       </div>
       <div class="panel to-pin"><div class="label">To pin</div><div class="big" data-k="toPin"></div></div>
       <div class="meter"><div class="fill" data-k="meterFill"></div><div class="full-line"></div></div>
+      <div class="tc-meter" data-k="tc" hidden>
+        <div class="tc-readout" data-k="tcReadout"></div>
+        <div class="tc-track" data-k="tcTrack">
+          <div class="tc-zone" data-k="tcZone"></div>
+          <div class="tc-fill" data-k="tcFill"></div>
+          <div class="tc-ticks" data-k="tcTicks"></div>
+          <div class="tc-target" data-k="tcTarget" aria-hidden="true"><span>⚑</span></div>
+          <div class="tc-marker" data-k="tcMarker"></div>
+        </div>
+      </div>
       <div class="toast" data-k="toast"></div>
+      <div class="scorecard courses" data-k="courses" role="dialog" aria-label="Courses" hidden>
+        <div class="card">
+          <div class="card-head"><strong>Courses</strong><span>Mapped from OpenStreetMap</span></div>
+          <div class="course-list" data-k="courseList"></div>
+          <div class="card-actions"><button type="button" class="primary" data-k="coursesClose">Close</button></div>
+        </div>
+      </div>
       <div class="credits"><span class="full" data-k="credits"></span><span class="short" data-k="creditsShort"></span></div>
       <div class="help" data-k="help"></div>
       <div class="view-switch" role="group" aria-label="Course look">
@@ -54,9 +71,10 @@ export class Hud {
       </div>
       <div class="scorecard" data-k="scorecard" role="dialog" aria-label="Scorecard" hidden>
         <div class="card">
-          <div class="card-head"><strong data-k="cardCourse"></strong><span data-k="cardTotal"></span></div>
+          <div class="card-head"><strong data-k="cardCourse"></strong><span data-k="cardTotal"></span><button type="button" class="card-courses" data-act="courses">Change course</button></div>
           <div class="card-table"><table data-k="cardTable"></table></div>
           <p class="card-hint">Tap a hole number to play it.</p>
+          <label class="card-setting"><input type="checkbox" id="tc-all" data-k="tcAll" /> Use the 3-click meter for every shot (otherwise putts and shots inside 100 yds)</label>
           <div class="card-actions" data-k="cardActions"></div>
         </div>
       </div>`;
@@ -71,7 +89,7 @@ export class Hud {
   update(s: HoleSession, courseName: string) {
     this.set("hole", String(s.hole.number));
     this.set("course", courseName);
-    this.set("par", `Par ${s.hole.par} · ${s.hole.lengthYards} yds`);
+    this.set("par", `Par ${s.hole.par} · ${s.hole.lengthYards} yds${s.hole.name ? ` · ${s.hole.name}` : ""}`);
     this.set("stroke", String(Math.max(1, s.strokes + (s.phase === "holed" ? 0 : 1))));
     this.set("club", s.club.name);
     const carry = s.club.isPutter ? `Range ${yd(s.puttRange)} yds` : `Carry ${yd(s.carries.get(s.club.id) ?? 0)} yds`;
@@ -110,6 +128,7 @@ export class Hud {
     skip(): void;
     restart(): void;
     scorecard(): void;
+    courses(): void;
   }) {
     const taps: Record<string, () => void> = {
       clubUp: () => a.club(-1),
@@ -118,7 +137,10 @@ export class Hud {
       skip: a.skip,
       restart: a.restart,
       scorecard: a.scorecard,
+      courses: a.courses,
     };
+    this.els.coursesClose.addEventListener("click", () => this.hideCourses());
+    this.root.querySelectorAll<HTMLButtonElement>(".card-courses").forEach((b) => b.addEventListener("click", () => a.courses()));
     this.root.querySelectorAll<HTMLButtonElement>(".view-switch button").forEach((b) => {
       b.addEventListener("click", () => a.setView(b.dataset.view as "splat" | "stylized"));
     });
@@ -239,6 +261,99 @@ export class Hud {
   setCredits(lines: string[]) {
     this.set("credits", lines.join(" · "));
     this.set("creditsShort", lines.some((l) => l.includes("OpenStreetMap")) ? "© OpenStreetMap contributors" : (lines[0] ?? ""));
+  }
+
+  /**
+   * The 3-click meter. Positions are meter values: 0..1 power, negative = past the
+   * accuracy zone (down to -overrun).
+   */
+  setThreeClick(
+    m: {
+      marker: number;
+      locked: number | null;
+      target: number;
+      zone: number;
+      overrun: number;
+      ticks: { power: number; label: string }[];
+      readout: string;
+    } | null,
+  ) {
+    const el = this.els.tc;
+    if (!m) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    const pct = (v: number) => `${((v + m.overrun) / (1 + m.overrun)) * 100}%`;
+    this.els.tcZone.style.left = pct(-m.zone);
+    this.els.tcZone.style.width = `${((2 * m.zone) / (1 + m.overrun)) * 100}%`;
+    this.els.tcTarget.style.left = pct(m.target);
+    this.els.tcMarker.style.left = pct(m.marker);
+    const fillTo = m.locked ?? Math.max(0, m.marker);
+    this.els.tcFill.style.left = pct(0);
+    this.els.tcFill.style.width = `${(fillTo / (1 + m.overrun)) * 100}%`;
+    this.els.tcFill.classList.toggle("locked", m.locked !== null);
+    const key = m.ticks.map((t) => `${t.power.toFixed(3)}${t.label}`).join("|");
+    if (this.els.tcTicks.dataset.key !== key) {
+      this.els.tcTicks.dataset.key = key;
+      this.els.tcTicks.replaceChildren(
+        ...m.ticks.map((t) => {
+          const d = document.createElement("span");
+          d.style.left = pct(t.power);
+          d.textContent = t.label;
+          return d;
+        }),
+      );
+    }
+    this.set("tcReadout", m.readout);
+  }
+
+  /** The "3-click for every shot" setting in the scorecard panel. */
+  bindThreeClickSetting(initial: boolean, onChange: (all: boolean) => void) {
+    const box = this.els.tcAll as HTMLInputElement;
+    box.checked = initial;
+    box.addEventListener("change", () => onChange(box.checked));
+  }
+
+  get coursesOpen(): boolean {
+    return !this.els.courses.hidden;
+  }
+
+  hideCourses() {
+    this.els.courses.hidden = true;
+  }
+
+  /** The course list: one card per baked course. */
+  showCourses(
+    courses: { id: string; name: string; place: string; country: string; holes: number; par: number; yards: number; photorealHoles: number[] }[],
+    currentId: string | null,
+    onPick: (id: string) => void,
+  ) {
+    this.els.courseList.replaceChildren(
+      ...courses.map((c) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "course-card" + (c.id === currentId ? " current" : "");
+        const name = document.createElement("strong");
+        name.textContent = c.name;
+        const where = document.createElement("span");
+        where.textContent = [c.place, c.country].filter(Boolean).join(", ");
+        const facts = document.createElement("span");
+        facts.className = "facts";
+        facts.textContent = `${c.holes} holes · par ${c.par} · ${c.yards.toLocaleString()} yds`;
+        b.append(name, where, facts);
+        if (c.photorealHoles.length) {
+          const badge = document.createElement("em");
+          badge.textContent = `Photoreal hole ${c.photorealHoles.join(", ")}`;
+          b.append(badge);
+        }
+        if (c.id === currentId) b.setAttribute("aria-current", "true");
+        b.addEventListener("click", () => onPick(c.id));
+        return b;
+      }),
+    );
+    this.hideScorecard();
+    this.els.courses.hidden = false;
   }
 
   hideToast() {

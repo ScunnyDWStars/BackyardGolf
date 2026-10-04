@@ -41,8 +41,10 @@ export class CameraDirector {
     const dir = new THREE.Vector3(Math.sin(heading), 0, -Math.cos(heading));
     this.desiredPos.copy(ball).addScaledVector(dir, -back);
     this.desiredPos.y = Math.max(this.desiredPos.y, this.ground(this.desiredPos.x, this.desiredPos.z)) + up;
-    this.desiredLook.copy(ball).addScaledVector(dir, putting ? 6 : 40);
-    this.desiredLook.y = this.ground(this.desiredLook.x, this.desiredLook.z) + (putting ? 0 : 2);
+    // Look at the ground a little way ahead, so the ball sits in the lower third of the
+    // frame with the horizon above centre (clear of the meter at the bottom of the screen).
+    this.desiredLook.copy(ball).addScaledVector(dir, putting ? 6 : 15);
+    this.desiredLook.y = this.ground(this.desiredLook.x, this.desiredLook.z);
     if (snap) {
       this.camera.position.copy(this.desiredPos);
       this.lookAt.copy(this.desiredLook);

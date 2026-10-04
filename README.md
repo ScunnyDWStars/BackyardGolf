@@ -19,6 +19,7 @@ npm run dev          # http://localhost:5173
 
 | Input | Action |
 | --- | --- |
+| Click / tap / Space ×3 | **3-click meter** for putts and shots inside 100 yds (or every shot, from the scorecard setting): start, stop at the ⚑ mark for the power that reaches the hole (slope, lie and wind included), then stop in the green zone. Early = left, late = right |
 | Drag mouse **down**, then push **up** | Swing. Backswing depth sets power, downswing time sets tempo, sideways drift curves the ball (right = fade/slice, left = draw/hook) |
 | ← / → (Shift = faster) | Aim |
 | ↑ / ↓ | Change club |
@@ -27,7 +28,7 @@ npm run dev          # http://localhost:5173
 | L | Load a splat file (.ply / .spz) from disk |
 | Space | Skip flyover / ball flight |
 | R | Restart hole |
-| C | Scorecard (tap a hole number to play it) |
+| C | Scorecard (tap a hole number to play it; **Change course** opens the course list) |
 
 On phones and tablets the on-screen buttons do the same: aim ◀ ▶ (hold), club ▲ ▼, overhead ⌖, skip ⏭, restart ↺, scorecard ▤. The Photoreal / Stylized switch is at the top right.
 
@@ -110,6 +111,21 @@ stylized look.
    `"1-9"` to bake only some holes. Elevation comes from AWS Terrain Tiles (Terrarium).
    Bunkers are dug in, water sits below its banks, and tee boxes are levelled.
 3. Play it: open `/?course=courses/my-course.json`. Add `&hole=7` to start on a hole.
+
+**Adding a course to the in-game list** (the published game can't reach map servers, so
+courses are baked here and shipped with it):
+
+```bash
+npx tsx scripts/course-request.ts "Old Course, St Andrews" 56.348 -2.811   # prints an overpass-turbo link
+# open the link, Export → raw OSM data, save as data/<id>-osm.json, then:
+npx tsx scripts/bake-course.ts data/<id>-osm.json public/courses/<id>.json --course "Old Course"
+npx tsx scripts/catalog.ts                                                   # refresh courses/index.json
+```
+
+`--course` picks one course when several share the land: play areas must sit inside that
+course's outline, and if hole numbers still repeat, the holes are chained by the shortest
+green-to-next-tee walks. The bake summary lists par, yardage and any hole numbers without
+mapped hole lines. Place names for the list live in `pipeline/courses/catalog-meta.json`.
 
 To keep a photoreal hole inside a mapped course, attach its capture. The map's tee and
 green fix the capture's position, rotation and true scale:

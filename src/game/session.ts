@@ -26,6 +26,9 @@ export interface ShotRecord {
   penalty?: "water" | "out-of-bounds";
 }
 
+/** 3-click meter range for short shots: 100 yards. */
+export const THREE_CLICK_RANGE_M = 91.44;
+
 const LIE_MODIFIERS: Partial<Record<Lie, LieModifier>> = {
   rough: { speed: 0.9, spin: 0.55 },
   bunker: { speed: 0.75, spin: 0.7 },
@@ -132,6 +135,80 @@ export class HoleSession {
       this.ballPos.z - Math.cos(this.aimHeading) * d,
     );
     return this.groundAt(p);
+  }
+
+  /** 3-click is used for putts and anything within 100 yd, or for every shot if chosen. */
+  usesThreeClick(allShots: boolean): boolean {
+    return allShots || this.club.isPutter === true || this.distanceToPin <= THREE_CLICK_RANGE_M;
+  }
+
+  /** Ground point `distance` metres along the aim line. */
+  pointAlongAim(distance: number): Vec3 {
+    return this.groundAt(
+      v3(this.ballPos.x + Math.sin(this.aimHeading) * distance, 0, this.ballPos.z - Math.cos(this.aimHeading) * distance),
+    );
+  }
+
+  private solverKey = "";
+  private solverCache: { scale: { power: number; distance: number }[]; ideal: number } | null = null;
+
+  /** Where a straight shot at `power` comes to rest, measured along the aim line (metres).
+   * Uses the real club, lie, wind and terrain (green slope); the cup never captures. */
+  restDistance(power: number): number {
+    const launch = this.launchFor({ power, tempo: 1, pathDeg: 0 });
+    const start = add(this.ballPos, v3(0, 0.02, 0));
+    const env = { terrain: this.terrain, wind: this.wind, pin: v3(1e9, 0, 1e9) };
+    const { final } = simulate(launchBall(start, launch, this.lie), env, { maxTime: 30, sampleEvery: 1e9 });
+    const dir = v3(Math.sin(this.aimHeading), 0, -Math.cos(this.aimHeading));
+    return (final.pos.x - this.ballPos.x) * dir.x + (final.pos.z - this.ballPos.z) * dir.z;
+  }
+
+  private solve() {
+    const key = `${this.club.id}|${this.lie}|${this.aimHeading.toFixed(4)}|${this.ballPos.x.toFixed(2)},${this.ballPos.z.toFixed(2)}|${this.wind.x},${this.wind.z}`;
+    if (key === this.solverKey && this.solverCache) return this.solverCache;
+    // Rest distance at 11 powers gives the meter's distance scale.
+    const scale = Array.from({ length: 11 }, (_, i) => ({ power: i / 10, distance: i === 0 ? 0 : this.restDistance(i / 10) }));
+    // Putts aim a little past the hole ("never up, never in"); other shots aim at it.
+    const target = this.distanceToPin + (this.club.isPutter ? 0.25 : 0);
+    let lo = 0;
+    let hi = 1;
+    if (scale[10].distance <= target) lo = hi = 1;
+    else {
+      // Bracket from the scale, then bisect with full simulations.
+      for (let i = 1; i <= 10; i++) {
+        if (scale[i].distance >= target) {
+          lo = scale[i - 1].power;
+          hi = scale[i].power;
+          break;
+        }
+      }
+      for (let k = 0; k < 12; k++) {
+        const mid = (lo + hi) / 2;
+        if (this.restDistance(mid) < target) lo = mid;
+        else hi = mid;
+      }
+    }
+    this.solverKey = key;
+    this.solverCache = { scale, ideal: (lo + hi) / 2 };
+    return this.solverCache;
+  }
+
+  /** Power (0..1) that brings the ball to rest at the hole along the aim line. */
+  idealPower(): number {
+    return this.solve().ideal;
+  }
+
+  /** Rest distance (m) for each tenth of power, for meter ticks and readouts. */
+  powerScale(): { power: number; distance: number }[] {
+    return this.solve().scale;
+  }
+
+  /** Interpolated rest distance for any power, from the cached scale. */
+  distanceAtPower(power: number): number {
+    const sc = this.powerScale();
+    const p = Math.max(0, Math.min(1, power)) * 10;
+    const i = Math.min(9, Math.floor(p));
+    return sc[i].distance + (sc[i + 1].distance - sc[i].distance) * (p - i);
   }
 
   launchFor(swing: SwingResult): Launch {

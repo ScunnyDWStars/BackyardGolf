@@ -49,6 +49,9 @@ export type HeightSampler = (p: LatLon) => number;
 export interface BakeOptions {
   /** Holes to bake by number (the `ref` tag of golf=hole ways); default: all. */
   holes?: number[];
+  /** Name (or part of it) of the leisure=golf_course to bake when several share the data,
+   * e.g. "Old Course" among the St Andrews links. */
+  course?: string;
   /** Metres of terrain beyond the holes and the course boundary. */
   margin?: number;
   cellSize?: number;
@@ -101,10 +104,26 @@ const polyLength = (pts: [number, number][]) =>
  * lowered below its banks, tee boxes levelled and raised.
  */
 export function bakeCourseFromOsm(elements: OsmElement[], heightAt: HeightSampler, opts: BakeOptions = {}): CourseData {
-  const holeWays = elements
+  const courses = elements.filter((e) => e.tags?.leisure === "golf_course" && outerRings(e).length);
+  let boundaryEl = courses[0];
+  if (opts.course) {
+    const want = opts.course.toLowerCase();
+    const named = courses.filter((e) => (e.tags?.name ?? "").toLowerCase().includes(want));
+    if (named.length === 0) {
+      const names = courses.map((e) => e.tags?.name ?? "(unnamed)").join(", ");
+      throw new Error(`no golf course named like "${opts.course}" (found: ${names || "none"})`);
+    }
+    // The smallest match is the most specific (a single course, not the whole links).
+    boundaryEl = named.sort((a, b) => ringArea(outerRings(a)[0]) - ringArea(outerRings(b)[0]))[0];
+  }
+  const boundaryRings = boundaryEl ? outerRings(boundaryEl) : [];
+  const inCourse = (p: LL) => !opts.course || boundaryRings.some((r) => pointInRing(p, r));
+
+  const candidates = elements
     .filter((e) => e.tags?.golf === "hole" && e.geometry && e.geometry.length >= 2)
     .filter((e) => !opts.holes || opts.holes.includes(Number(e.tags!.ref)))
-    .sort((a, b) => Number(a.tags!.ref) - Number(b.tags!.ref));
+    .filter((e) => !opts.course || e.geometry!.filter(inCourse).length * 2 >= e.geometry!.length);
+  const holeWays = resolveHoleChain(candidates);
   if (holeWays.length === 0) {
     throw new Error(opts.holes ? `no golf=hole way with ref=${opts.holes.join(",")}` : "no golf=hole ways in the data");
   }
@@ -117,8 +136,8 @@ export function bakeCourseFromOsm(elements: OsmElement[], heightAt: HeightSample
   };
 
   const lines = holeWays.map((w) => w.geometry!.map(toXZ));
-  const boundaryEl = elements.find((e) => e.tags?.leisure === "golf_course" && outerRings(e).length);
-  const boundaryRing = boundaryEl ? outerRings(boundaryEl)[0].map(toXZ) : null;
+  const largest = [...boundaryRings].sort((a, b) => ringArea(b) - ringArea(a))[0];
+  const boundaryRing = largest ? largest.map(toXZ) : null;
 
   // Terrain extent: around the holes being baked (a single hole stays small).
   const margin = opts.margin ?? (holeWays.length === 1 ? 120 : 60);
@@ -144,6 +163,8 @@ export function bakeCourseFromOsm(elements: OsmElement[], heightAt: HeightSample
       for (const ring of outerRings(e)) {
         const poly = ring.map(toXZ);
         if (!anyInBox(poly)) continue;
+        // With a named course, play areas must belong to it; scenery may straddle the edge.
+        if (opts.course && lie && !inCourse(centroidLL(ring))) continue;
         if (lie) areas.push({ lie, polygon: poly });
         else features.woods!.push({ kind: wood!, polygon: poly });
       }
@@ -220,6 +241,66 @@ export function bakeCourseFromOsm(elements: OsmElement[], heightAt: HeightSample
     features,
     holes,
   };
+}
+
+function ringArea(r: LL[]): number {
+  let a = 0;
+  for (let i = 0; i < r.length; i++) {
+    const p = r[i];
+    const q = r[(i + 1) % r.length];
+    a += p.lon * q.lat - q.lon * p.lat;
+  }
+  return Math.abs(a / 2);
+}
+
+function pointInRing(p: LL, r: LL[]): boolean {
+  let inside = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const a = r[i];
+    const b = r[j];
+    if (a.lat > p.lat !== b.lat > p.lat && p.lon < ((b.lon - a.lon) * (p.lat - a.lat)) / (b.lat - a.lat) + a.lon) inside = !inside;
+  }
+  return inside;
+}
+
+function centroidLL(r: LL[]): LL {
+  return { lat: r.reduce((s, p) => s + p.lat, 0) / r.length, lon: r.reduce((s, p) => s + p.lon, 0) / r.length };
+}
+
+/**
+ * Pick one hole per number when several courses' holes are mixed (shared links land).
+ * Golfers walk from each green to the next tee, so the right sequence is the one with the
+ * shortest total green-to-next-tee walk: solved exactly with dynamic programming.
+ */
+export function resolveHoleChain(holes: OsmElement[]): OsmElement[] {
+  const byRef = new Map<number, OsmElement[]>();
+  for (const h of holes) {
+    const ref = Number(h.tags?.ref);
+    if (!Number.isFinite(ref)) continue;
+    byRef.set(ref, [...(byRef.get(ref) ?? []), h]);
+  }
+  const refs = [...byRef.keys()].sort((a, b) => a - b);
+  if (refs.every((r) => byRef.get(r)!.length === 1)) return refs.map((r) => byRef.get(r)![0]);
+
+  const metres = (a: LL, b: LL) =>
+    Math.hypot((a.lat - b.lat) * 111_320, (a.lon - b.lon) * 111_320 * Math.cos((a.lat * Math.PI) / 180));
+  let prev = byRef.get(refs[0])!.map((h) => ({ cost: 0, path: [h] }));
+  for (const ref of refs.slice(1)) {
+    prev = byRef.get(ref)!.map((h) => {
+      let best = prev[0];
+      let bestCost = Infinity;
+      for (const p of prev) {
+        const last = p.path[p.path.length - 1].geometry!;
+        const c = p.cost + metres(last[last.length - 1], h.geometry![0]);
+        if (c < bestCost) {
+          bestCost = c;
+          best = p;
+        }
+      }
+      return { cost: bestCost, path: [...best.path, h] };
+    });
+  }
+  return prev.sort((a, b) => a.cost - b.cost)[0].path;
 }
 
 /** Single-hole convenience wrapper (terrain origin at that hole's tee). */

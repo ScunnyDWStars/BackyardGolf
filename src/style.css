@@ -28,7 +28,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--sky); 
 .shot-info { bottom: calc(16px + var(--sab)); left: 16px; min-width: 190px; }
 .shot-info .club { font-family: var(--display); font-size: 24px; font-weight: 600; letter-spacing: 0.02em; }
 .shot-info .carry, .shot-info .lie { font-size: 13px; opacity: 0.9; }
-.to-pin { bottom: calc(16px + var(--sab)); left: 50%; transform: translateX(-50%); text-align: center; }
+.to-pin { top: calc(16px + var(--sat)); left: 50%; transform: translateX(-50%); text-align: center; }
 .to-pin .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
 .to-pin .big { font-family: var(--display); font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .view-switch { position: absolute; top: calc(92px + var(--sat)); right: 16px; display: flex;
@@ -69,7 +69,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--sky); 
   .to-pin .big { font-size: 24px; }
   .view-switch { top: calc(88px + var(--sat)); }
   .view-switch button { padding: 6px 10px; font-size: 12px; min-height: 32px; }
-  .help { bottom: calc(176px + var(--sab)); font-size: 11px; }
+  .help { bottom: calc(258px + var(--sab)); font-size: 11px; }
   .meter { top: 42%; height: 180px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -116,4 +116,48 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--sky); 
   .credits { top: calc(100px + var(--sat)); bottom: auto; left: 16px; transform: none; max-width: 45vw; }
   .credits .full { display: none; }
   .credits .short { display: inline; }
+}
+
+/* 3-click meter: a broadcast-style bar. Left end is the accuracy zone, then 0..100% power. */
+.tc-meter { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(34px + var(--sab));
+  width: min(560px, calc(100vw - 32px)); display: grid; gap: 14px; }
+.tc-readout { justify-self: center; font-family: var(--display); font-size: 22px; font-weight: 700;
+  font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000; min-height: 1.1em; }
+.tc-track { position: relative; height: 26px; border-radius: 13px; background: var(--panel);
+  border: 2px solid rgb(255 255 255 / 0.85); overflow: visible; }
+.tc-zone { position: absolute; top: 2px; bottom: 2px; border-radius: 9px; background: #43c46a; }
+.tc-fill { position: absolute; top: 4px; bottom: 4px; border-radius: 7px; background: linear-gradient(90deg, #ffe066, #ffb340); opacity: 0.9; }
+.tc-fill.locked { background: linear-gradient(90deg, #ffd23f, #ff9f1c); }
+.tc-ticks span { position: absolute; top: 100%; transform: translateX(-50%); margin-top: 3px; font-size: 10px;
+  font-variant-numeric: tabular-nums; opacity: 0.9; text-shadow: 0 1px 2px #000; white-space: nowrap; }
+.tc-ticks span::before { content: ""; position: absolute; left: 50%; top: -9px; width: 1px; height: 6px; background: rgb(255 255 255 / 0.7); }
+.tc-target { position: absolute; top: -18px; transform: translateX(-50%); color: #ff4b3e; font-size: 18px;
+  line-height: 1; text-shadow: 0 1px 2px #000; }
+.tc-target::after { content: ""; position: absolute; left: 50%; top: 16px; width: 2px; height: 30px; transform: translateX(-50%); background: #ff4b3e; }
+.tc-marker { position: absolute; top: -5px; bottom: -5px; width: 4px; margin-left: -2px; border-radius: 2px; background: #fff;
+  box-shadow: 0 0 0 1px #000; }
+.card-setting { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: #14263d; }
+.card-setting input { margin-top: 2px; }
+@media (max-width: 640px) {
+  .tc-meter { bottom: calc(196px + var(--sab)); }
+  .tc-readout { font-size: 18px; }
+}
+
+.card-courses { margin-left: auto; min-height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid #1f4d2f;
+  background: #fff; color: #1f4d2f; font: 600 13px/1 system-ui, sans-serif; cursor: pointer; }
+.card-courses:focus-visible, .course-card:focus-visible { outline: 2px solid #1f6f3a; outline-offset: 2px; }
+.course-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; max-height: 60vh; overflow-y: auto; }
+.course-card { display: grid; gap: 3px; text-align: left; padding: 12px 14px; border-radius: 8px; cursor: pointer;
+  border: 1px solid #c9cfc0; background: #fff; color: #14263d; font: 14px/1.35 system-ui, sans-serif; min-width: 0; }
+.course-card strong { font-family: var(--display); font-size: 20px; letter-spacing: 0.01em; }
+.course-card span { color: #4a5a4c; font-size: 13px; }
+.course-card .facts { font-variant-numeric: tabular-nums; color: #14263d; }
+.course-card em { justify-self: start; margin-top: 4px; font-style: normal; font-size: 12px; font-weight: 600;
+  padding: 2px 8px; border-radius: 10px; background: #fff2c4; color: #6b4e00; }
+.course-card.current { border-color: #1f4d2f; box-shadow: inset 0 0 0 2px #1f4d2f; }
+
+/* Keep the help line above the 3-click meter when it is showing. */
+.tc-meter:not([hidden]) ~ .help { bottom: calc(112px + var(--sab)); }
+@media (max-width: 640px) {
+  .tc-meter:not([hidden]) ~ .help { bottom: calc(272px + var(--sab)); }
 }

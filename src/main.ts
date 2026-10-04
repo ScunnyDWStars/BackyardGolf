@@ -407,7 +407,10 @@ async function main() {
   const timer = new THREE.Timer();
   renderer.setAnimationLoop((time) => {
     timer.update(time);
-    const dt = Math.min(timer.getDelta(), 0.1);
+    // Physics and animation use a capped step; interface timers use real time so slow
+    // devices don't make the scorecard or camera wait longer.
+    const realDt = timer.getDelta();
+    const dt = Math.min(realDt, 0.1);
 
     if (canAdjust() && (aimHeld.left || aimHeld.right)) {
       const turn = (aimHeld.fast ? 1.2 : 0.35) * dt;
@@ -442,11 +445,11 @@ async function main() {
       restTimer = 1.4;
     }
     if (cardTimer > 0) {
-      cardTimer -= dt;
+      cardTimer -= realDt;
       if (cardTimer <= 0 && session.phase === "holed") showCard(true);
     }
     if (restTimer > 0) {
-      restTimer -= dt;
+      restTimer -= realDt;
       if (restTimer <= 0 && session.phase === "address") frameAddress();
     }
 

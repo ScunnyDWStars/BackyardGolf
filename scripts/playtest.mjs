@@ -84,10 +84,10 @@ for (let hole = 0; hole < holeCount; hole++) {
   }
   await page.waitForSelector("[data-k=scorecard]:not([hidden])", { timeout: 20_000 });
   await page.screenshot({ path: `${out}/04-card-h${hole + 1}.png` });
-  const label = await page.textContent(".card-actions button.primary");
+  const label = await page.textContent("[data-k=scorecard] .card-actions button.primary");
   console.log(`scorecard after hole ${hole + 1}: "${label}"`);
   if (hole + 1 < holeCount) {
-    await page.click(".card-actions button.primary");
+    await page.click("[data-k=scorecard] .card-actions button.primary");
     await page.waitForTimeout(1500);
     await page.keyboard.press(" "); // skip the flyover
     await page.waitForTimeout(1500);

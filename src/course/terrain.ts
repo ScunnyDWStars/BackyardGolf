@@ -63,9 +63,9 @@ export class TerrainModel {
 
   lieAt(x: number, z: number): Lie {
     if (!pointInPolygon(x, z, this.course.bounds)) return "out-of-bounds";
-    for (const { box, polygon, lie } of this.areas) {
+    for (const { box, polygon, holes, lie } of this.areas) {
       if (x < box[0] || x > box[2] || z < box[1] || z > box[3]) continue;
-      if (pointInPolygon(x, z, polygon)) return lie;
+      if (pointInPolygon(x, z, polygon) && !holes?.some((h) => pointInPolygon(x, z, h))) return lie;
     }
     return "rough";
   }

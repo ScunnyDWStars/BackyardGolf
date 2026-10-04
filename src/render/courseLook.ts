@@ -45,46 +45,6 @@ function allAreas(course: CourseData): Area[] {
   return [...(course.areas ?? []), ...course.holes.flatMap((h) => h.areas)];
 }
 
-function centroid(poly: Polygon2): [number, number] {
-  let x = 0;
-  let z = 0;
-  for (const p of poly) {
-    x += p[0];
-    z += p[1];
-  }
-  return [x / poly.length, z / poly.length];
-}
-
-/** Direction of play at the point of a hole's centre line nearest to (x, z). */
-function playDirection(course: CourseData, x: number, z: number, preferEnd: boolean): [number, number] {
-  let best = Infinity;
-  let dir: [number, number] = [0, -1];
-  for (const hole of course.holes) {
-    const cl = hole.centerline.length > 1 ? hole.centerline : [[hole.tee.x, hole.tee.z], [hole.pin.x, hole.pin.z]];
-    for (let i = 0; i + 1 < cl.length; i++) {
-      const [ax, az] = cl[i];
-      const [bx, bz] = cl[i + 1];
-      const dx = bx - ax;
-      const dz = bz - az;
-      const len2 = dx * dx + dz * dz || 1;
-      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / len2));
-      const d = Math.hypot(x - ax - t * dx, z - az - t * dz);
-      if (d < best) {
-        best = d;
-        const L = Math.sqrt(len2);
-        dir = [dx / L, dz / L];
-      }
-    }
-    if (preferEnd && Math.hypot(x - hole.pin.x, z - hole.pin.z) < 60) {
-      const [ax, az] = cl[cl.length - 2];
-      const [bx, bz] = cl[cl.length - 1];
-      const L = Math.hypot(bx - ax, bz - az) || 1;
-      return [(bx - ax) / L, (bz - az) / L];
-    }
-  }
-  return dir;
-}
-
 interface Masks {
   lies: THREE.DataTexture; // R fairway, G green, B bunker, A water
   aux: THREE.DataTexture; // R tee, G woods, BA mowing direction
@@ -105,49 +65,61 @@ function buildMasks(course: CourseData): Masks {
   canvas.height = h;
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   const toPx = ([x, z]: [number, number]): [number, number] => [(x - hf.originX) / metresPerPx, (z - hf.originZ) / metresPerPx];
-  const path = (poly: Polygon2) => {
-    ctx.beginPath();
-    poly.forEach((p, i) => (i ? ctx.lineTo(...toPx(p)) : ctx.moveTo(...toPx(p))));
-    ctx.closePath();
-  };
   const areas = allAreas(course);
-  const paint = (polys: Polygon2[]) => {
+  /** Outer ring plus cut-outs in one path, filled even-odd so the cut-outs stay empty. */
+  const pathWithHoles = (a: { polygon: Polygon2; holes?: Polygon2[] }) => {
+    ctx.beginPath();
+    for (const ring of [a.polygon, ...(a.holes ?? [])]) {
+      ring.forEach((p, i) => (i ? ctx.lineTo(...toPx(p)) : ctx.moveTo(...toPx(p))));
+      ctx.closePath();
+    }
+  };
+  const paint = (shapes: { polygon: Polygon2; holes?: Polygon2[] }[]) => {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = "#fff";
-    for (const p of polys) {
-      path(p);
-      ctx.fill();
+    for (const a of shapes) {
+      pathWithHoles(a);
+      ctx.fill("evenodd");
     }
     return ctx.getImageData(0, 0, w, h).data;
   };
-  const byLie = (lie: string) => areas.filter((a) => a.lie === lie).map((a) => a.polygon);
+  const byLie = (lie: string) => areas.filter((a) => a.lie === lie);
 
   const lies = new Uint8Array(w * h * 4);
   const aux = new Uint8Array(w * h * 4);
-  const channels: [Uint8Array, number, Polygon2[]][] = [
+  const channels: [Uint8Array, number, { polygon: Polygon2; holes?: Polygon2[] }[]][] = [
     [lies, 0, byLie("fairway")],
     [lies, 1, byLie("green")],
     [lies, 2, byLie("bunker")],
     [lies, 3, byLie("water")],
     [aux, 0, byLie("tee")],
-    [aux, 1, (course.features?.woods ?? []).map((wd) => wd.polygon)],
+    [aux, 1, course.features?.woods ?? []],
   ];
   for (const [target, ch, polys] of channels) {
     const img = paint(polys);
     for (let i = 0; i < w * h; i++) target[i * 4 + ch] = img[i * 4];
   }
 
-  // Mowing direction per mown area, from the hole it belongs to.
+  // Mowing direction follows the hole each patch of turf belongs to: paint a wide band along
+  // every hole segment in that segment's direction (shared fairways split between holes).
   ctx.fillStyle = "rgb(128,0,128)";
   ctx.fillRect(0, 0, w, h);
-  for (const a of areas) {
-    if (a.lie !== "fairway" && a.lie !== "green" && a.lie !== "tee") continue;
-    const [cx, cz] = centroid(a.polygon);
-    const [dx, dz] = playDirection(course, cx, cz, a.lie === "green");
-    ctx.fillStyle = `rgb(${Math.round((dx * 0.5 + 0.5) * 255)},0,${Math.round((dz * 0.5 + 0.5) * 255)})`;
-    path(a.polygon);
-    ctx.fill();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 90 / metresPerPx;
+  for (const hole of course.holes) {
+    const cl = hole.centerline.length > 1 ? hole.centerline : [[hole.tee.x, hole.tee.z], [hole.pin.x, hole.pin.z]] as [number, number][];
+    for (let i = 0; i + 1 < cl.length; i++) {
+      const [ax, az] = cl[i];
+      const [bx, bz] = cl[i + 1];
+      const L = Math.hypot(bx - ax, bz - az) || 1;
+      ctx.strokeStyle = `rgb(${Math.round(((bx - ax) / L * 0.5 + 0.5) * 255)},0,${Math.round(((bz - az) / L * 0.5 + 0.5) * 255)})`;
+      ctx.beginPath();
+      ctx.moveTo(...toPx([ax, az]));
+      ctx.lineTo(...toPx([bx, bz]));
+      ctx.stroke();
+    }
   }
   const dirImg = ctx.getImageData(0, 0, w, h).data;
   for (let i = 0; i < w * h; i++) {

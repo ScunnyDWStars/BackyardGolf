@@ -7,7 +7,7 @@ import type { CourseData } from "../src/course/types";
 
 const DIR = "public/courses";
 const SKIP = new Set(["index.json", "romanby-h2.json", "sample-course.json"]);
-const meta: Record<string, { place?: string; country?: string }> = JSON.parse(
+const meta: Record<string, { name?: string; place?: string; country?: string }> = JSON.parse(
   readFileSync("pipeline/courses/catalog-meta.json", "utf8"),
 );
 
@@ -19,7 +19,7 @@ const entries = readdirSync(DIR)
     return {
       id,
       file: `courses/${file}`,
-      name: c.name,
+      name: meta[id]?.name ?? c.name,
       place: meta[id]?.place ?? "",
       country: meta[id]?.country ?? "",
       holes: c.holes.length,

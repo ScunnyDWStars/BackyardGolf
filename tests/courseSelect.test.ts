@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bakeCourseFromOsm, resolveHoleChain, type OsmElement } from "../src/course/osm";
 import { makeProjection } from "../src/geo/projection";
+import { TerrainModel } from "../src/course/terrain";
 
 const proj = makeProjection({ lat: 56.34, lon: -2.8 });
 const ll = ([x, z]: [number, number]) => proj.toLatLon(x, z);
@@ -51,6 +52,47 @@ describe("picking one course out of shared data", () => {
     expect(chain.map((h) => h.tags!.ref)).toEqual(["1", "2", "3"]);
     const notes = new Set(chain.map((h) => h.tags!.note));
     expect(notes.size).toBe(1);
+  });
+
+  it("prefers the main course over a par-3 course in the same grounds", () => {
+    // Main course: 400 m holes going out and back; par-3 course: 120 m holes packed near
+    // the clubhouse. Both have short walks from each green to the next tee.
+    const main: OsmElement[] = [];
+    const par3: OsmElement[] = [];
+    for (let n = 1; n <= 4; n++) {
+      const up = n % 2 === 1;
+      main.push(way({ golf: "hole", ref: String(n), note: "main" }, up ? [[n * 30, 0], [n * 30, -400]] : [[n * 30, -400], [n * 30, 0]]));
+      par3.push(way({ golf: "hole", ref: String(n), note: "par3" }, up ? [[-100 - n * 15, 0], [-100 - n * 15, -120]] : [[-100 - n * 15, -120], [-100 - n * 15, 0]]));
+    }
+    const chain = resolveHoleChain([...par3, ...main]);
+    expect(chain.map((h) => h.tags!.note)).toEqual(["main", "main", "main", "main"]);
+  });
+
+  it("keeps a shared links fairway crossed by the course's holes, with its cut-outs", () => {
+    // One fairway multipolygon spanning both courses (centre outside the Old outline),
+    // with a gorse island cut out of it.
+    const ringPts = (pts: [number, number][]) => [...pts, pts[0]].map(ll);
+    const fairway: OsmElement = {
+      type: "relation",
+      id: id++,
+      tags: { golf: "fairway", type: "multipolygon" },
+      members: [
+        { type: "way", role: "outer", geometry: ringPts(rect(-40, -20, 400, -500)) },
+        { type: "way", role: "inner", geometry: ringPts(rect(-10, -200, 10, -220)) },
+      ],
+    };
+    const elements = [
+      way({ leisure: "golf_course", name: "Old Course" }, rect(-60, 60, 60, -600), true),
+      ...loop(0, "old"),
+      fairway,
+    ];
+    const course = bakeCourseFromOsm(elements, () => 0, { course: "Old Course" });
+    const fw = course.areas!.filter((a) => a.lie === "fairway");
+    expect(fw).toHaveLength(1);
+    expect(fw[0].holes).toHaveLength(1);
+    const t = new TerrainModel(course, 0);
+    expect(t.lieAt(0, -100)).toBe("fairway");
+    expect(t.lieAt(0, -210)).toBe("rough"); // inside the cut-out
   });
 
   it("explains which courses exist when the name doesn't match", () => {

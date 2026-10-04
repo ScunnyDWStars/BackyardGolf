@@ -85,6 +85,15 @@ export function assembleRings(segments: LL[][]): LL[][] {
   return rings;
 }
 
+/** Outer rings with their inner rings (cut-outs) attached. */
+function polygonsWithHoles(e: OsmElement): { outer: LL[]; inners: LL[][] }[] {
+  if (e.type !== "relation" || !e.members) return outerRings(e).map((outer) => ({ outer, inners: [] }));
+  const outers = outerRings(e).map((outer) => ({ outer, inners: [] as LL[][] }));
+  const inners = assembleRings(e.members.filter((m) => m.role === "inner" && m.geometry).map((m) => m.geometry!));
+  for (const inner of inners) outers.find((o) => pointInRing(inner[0], o.outer))?.inners.push(inner);
+  return outers;
+}
+
 function outerRings(e: OsmElement): LL[][] {
   if (e.type === "way" && e.geometry && e.geometry.length >= 3) return [e.geometry];
   if (e.type === "relation" && e.members) {
@@ -156,17 +165,30 @@ export function bakeCourseFromOsm(elements: OsmElement[], heightAt: HeightSample
 
   const areas: Area[] = [];
   const features: CourseFeatures = { trees: [], woods: [], treeRows: [] };
+  // Points along the selected holes: a play area crossed by one of them belongs to the course
+  // even when it is a big shared shape whose centre lies elsewhere (common on links courses).
+  const holePoints: LL[] = holeWays.flatMap((w) => {
+    const g = w.geometry!;
+    return g.flatMap((p, i) => (i + 1 < g.length ? [p, { lat: (p.lat + g[i + 1].lat) / 2, lon: (p.lon + g[i + 1].lon) / 2 }] : [p]));
+  });
+  const belongs = (outer: LL[]) =>
+    inCourse(centroidLL(outer)) || outer.some(inCourse) || holePoints.some((p) => pointInRing(p, outer));
+
   for (const e of elements) {
     const lie = lieForTags(e.tags);
     const wood = woodKind(e.tags);
-    if (lie || wood) {
-      for (const ring of outerRings(e)) {
-        const poly = ring.map(toXZ);
+    if (lie) {
+      for (const { outer, inners } of polygonsWithHoles(e)) {
+        const poly = outer.map(toXZ);
         if (!anyInBox(poly)) continue;
         // With a named course, play areas must belong to it; scenery may straddle the edge.
-        if (opts.course && lie && !inCourse(centroidLL(ring))) continue;
-        if (lie) areas.push({ lie, polygon: poly });
-        else features.woods!.push({ kind: wood!, polygon: poly });
+        if (opts.course && !belongs(outer)) continue;
+        areas.push(inners.length ? { lie, polygon: poly, holes: inners.map((r) => r.map(toXZ)) } : { lie, polygon: poly });
+      }
+    } else if (wood) {
+      for (const ring of outerRings(e)) {
+        const poly = ring.map(toXZ);
+        if (anyInBox(poly)) features.woods!.push({ kind: wood, polygon: poly });
       }
     }
     if (e.type === "node" && e.tags?.natural === "tree" && e.lat !== undefined && e.lon !== undefined) {
@@ -268,9 +290,11 @@ function centroidLL(r: LL[]): LL {
 }
 
 /**
- * Pick one hole per number when several courses' holes are mixed (shared links land).
- * Golfers walk from each green to the next tee, so the right sequence is the one with the
- * shortest total green-to-next-tee walk: solved exactly with dynamic programming.
+ * Pick one hole per number when several courses' holes are mixed (shared links land, or a
+ * par-3 course inside the main course's grounds). Golfers walk from each green to the next
+ * tee, so the right sequence has short green-to-next-tee walks; among plausible sequences
+ * the main course is the one with the longer holes. The cost per step is the walk minus a
+ * share of the hole's length, minimised exactly with dynamic programming.
  */
 export function resolveHoleChain(holes: OsmElement[]): OsmElement[] {
   const byRef = new Map<number, OsmElement[]>();
@@ -284,14 +308,17 @@ export function resolveHoleChain(holes: OsmElement[]): OsmElement[] {
 
   const metres = (a: LL, b: LL) =>
     Math.hypot((a.lat - b.lat) * 111_320, (a.lon - b.lon) * 111_320 * Math.cos((a.lat * Math.PI) / 180));
-  let prev = byRef.get(refs[0])!.map((h) => ({ cost: 0, path: [h] }));
+  const LENGTH_WEIGHT = 0.5;
+  const holeLength = (h: OsmElement) =>
+    h.geometry!.slice(1).reduce((s, p, i) => s + metres(h.geometry![i], p), 0);
+  let prev = byRef.get(refs[0])!.map((h) => ({ cost: -LENGTH_WEIGHT * holeLength(h), path: [h] }));
   for (const ref of refs.slice(1)) {
     prev = byRef.get(ref)!.map((h) => {
       let best = prev[0];
       let bestCost = Infinity;
       for (const p of prev) {
         const last = p.path[p.path.length - 1].geometry!;
-        const c = p.cost + metres(last[last.length - 1], h.geometry![0]);
+        const c = p.cost + metres(last[last.length - 1], h.geometry![0]) - LENGTH_WEIGHT * holeLength(h);
         if (c < bestCost) {
           bestCost = c;
           best = p;

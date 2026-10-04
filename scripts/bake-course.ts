@@ -41,5 +41,5 @@ console.log(`total par ${par}, ${yards} yds${missing.length ? ` — MISSING hole
 console.log(
   `${course.name}: ${course.holes.length} holes (${course.holes.map((x) => `${x.number}:par ${x.par} ${x.lengthYards}yd`).join(", ")}), ` +
     `${course.areas?.length ?? 0} areas, ${course.features?.trees?.length ?? 0} trees, ${course.features?.woods?.length ?? 0} woods, ` +
-    `relief ${Math.min(...h).toFixed(1)}..${Math.max(...h).toFixed(1)} m, ${hf.cols}x${hf.rows} cells -> ${out}`,
+    `relief ${h.reduce((a, b) => Math.min(a, b), Infinity).toFixed(1)}..${h.reduce((a, b) => Math.max(a, b), -Infinity).toFixed(1)} m, ${hf.cols}x${hf.rows} cells -> ${out}`,
 );

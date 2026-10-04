@@ -1,3 +1,15 @@
 {
-  "romanby": { "place": "Northallerton, North Yorkshire", "country": "England" }
+ "romanby": {
+  "place": "Northallerton, North Yorkshire",
+  "country": "England"
+ },
+ "st-andrews-old": {
+  "place": "St Andrews, Fife",
+  "country": "Scotland",
+  "name": "Old Course, St Andrews"
+ },
+ "augusta-national": {
+  "place": "Augusta, Georgia",
+  "country": "United States"
+ }
 }

@@ -8,6 +8,8 @@ export type Polygon2 = [number, number][];
 export interface Area {
   lie: Lie;
   polygon: Polygon2;
+  /** Cut-outs (e.g. gorse or rough islands inside a links fairway). */
+  holes?: Polygon2[];
 }
 
 /** Scenery from the map: individual trees, woods/scrub to fill, and tree rows. */

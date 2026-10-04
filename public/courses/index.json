@@ -1,6 +1,36 @@
 {
  "courses": [
   {
+   "id": "augusta-national",
+   "file": "courses/augusta-national.json",
+   "name": "Augusta National Golf Club",
+   "place": "Augusta, Georgia",
+   "country": "United States",
+   "holes": 18,
+   "par": 72,
+   "yards": 7619,
+   "photorealHoles": [],
+   "credits": [
+    "Course layout © OpenStreetMap contributors (ODbL)",
+    "Elevation: AWS Terrain Tiles (Mapzen Terrarium)"
+   ]
+  },
+  {
+   "id": "st-andrews-old",
+   "file": "courses/st-andrews-old.json",
+   "name": "Old Course, St Andrews",
+   "place": "St Andrews, Fife",
+   "country": "Scotland",
+   "holes": 18,
+   "par": 72,
+   "yards": 6969,
+   "photorealHoles": [],
+   "credits": [
+    "Course layout © OpenStreetMap contributors (ODbL)",
+    "Elevation: AWS Terrain Tiles (Mapzen Terrarium)"
+   ]
+  },
+  {
    "id": "romanby",
    "file": "courses/romanby.json",
    "name": "Romanby Golf Club",

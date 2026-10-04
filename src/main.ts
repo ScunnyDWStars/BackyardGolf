@@ -199,8 +199,10 @@ async function main() {
   const frameAddress = (snap = false) => director.frameAddress(toV(session.ballPos), session.aimHeading, putting(), snap);
 
   let cardTimer = 0;
+  let handledShots = 0;
   const startHole = (index: number, flyover: boolean) => {
     session = round.play(index);
+    handledShots = 0;
     placeHoleProps();
     trailPts.length = 0;
     trail.geometry.setFromPoints([]);
@@ -425,7 +427,10 @@ async function main() {
       if (meter.phase === "done") takeShot(meter.result!);
     }
 
-    const cameToRest = session.update(dt);
+    // A shot can also finish outside the loop (Skip), so count finished shots.
+    session.update(dt);
+    const cameToRest = session.shots.length > handledShots;
+    handledShots = session.shots.length;
     const ballPos = toV(session.ball?.pos ?? session.ballPos);
     ball.position.copy(ballPos).add(new THREE.Vector3(0, 0.04, 0));
     if (session.phase === "flight") {
